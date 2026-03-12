@@ -1,0 +1,32 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/extension/surfrag-extension/node_modules/
+/extension/surfrag-extension/.pnp
+/extension/surfrag-extension/.pnp.js
+
+# testing
+/extension/surfrag-extension/coverage/
+
+# misc
+/extension/surfrag-extension/.DS_Store
+/extension/surfrag-extension/*.pem
+
+# debug
+/extension/surfrag-extension/npm-debug.log*
+/extension/surfrag-extension/yarn-debug.log*
+/extension/surfrag-extension/yarn-error.log*
+/extension/surfrag-extension/.pnpm-debug.log*
+
+# local env files
+/extension/surfrag-extension/.env*.local
+
+/extension/surfrag-extension/out/
+/extension/surfrag-extension/build/
+/extension/surfrag-extension/dist/
+
+# plasmo
+/extension/surfrag-extension/.plasmo
+
+# typescript
+/extension/surfrag-extension/.tsbuildinfo
