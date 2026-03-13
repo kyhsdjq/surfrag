@@ -2,6 +2,51 @@
 
 A local-first web knowledge Q&A system powered by LightRAG and MCP. Syncs your browsing history to a local knowledge graph and enables context-aware answers directly in your IDE.
 
+## Project Architecture
+
+```mermaid
+flowchart TB
+    subgraph "User"
+        A[""User browses web""]
+    end
+
+    subgraph "Phase 1.1 Extension"
+        B[""Content Script""]
+        C[""Extract page data""]
+        D[""Scroll tracking""]
+        E[""chrome.storage.local""]
+        F[""Send to Local API""]
+    end
+
+    subgraph "Phase 1.2 Local MCP Server"
+        G[""POST /captures""]
+        H[""SQLite database""]
+        I[""MCP search tools""]
+        J[""search_captures""]
+        K[""get_capture_by_id""]
+    end
+
+    subgraph "IDE Cursor"
+        L[""MCP client query""]
+    end
+
+    A --> B
+    B --> C
+    B --> D
+    C --> E
+    C --> F
+    D --> E
+    D --> F
+    E -.-> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    I --> K
+    J --> L
+    K --> L
+```
+
 ## Requirements
 
 - Windows 11
