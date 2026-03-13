@@ -4,6 +4,7 @@ A local-first web knowledge Q&A system powered by LightRAG and MCP. Syncs your b
 
 ## Requirements
 
+- Windows 11
 - Node.js v20 LTS
 - pnpm
 - Chrome
@@ -19,8 +20,8 @@ The extension sends captured page data to the local API. Both components must us
 
 **Server:** Create `services/local-mcp-server/.env` from the example and set `PORT=3030` (or your preferred port):
 
-```bash
-cp services/local-mcp-server/.env.example services/local-mcp-server/.env
+```powershell
+Copy-Item services/local-mcp-server/.env.example services/local-mcp-server/.env
 ```
 
 **Extension:** Click the SurfRAG icon in the Chrome toolbar, enter the API base URL (e.g. `http://localhost:3030`), then click **Save API URL**. The default is `http://localhost:3030`.
@@ -31,8 +32,8 @@ cp services/local-mcp-server/.env.example services/local-mcp-server/.env
 
 1. **Start the local server** (required; must stay running):
 
-   ```bash
-   cd services/local-mcp-server
+   ```powershell
+   Set-Location services/local-mcp-server
    pnpm install
    pnpm build
    pnpm start
@@ -52,19 +53,19 @@ cp services/local-mcp-server/.env.example services/local-mcp-server/.env
 
 1. **Install dependencies**:
 
-   ```bash
-   cd extension/surfrag-extension && pnpm install
-   cd ../../services/local-mcp-server && pnpm install
+   ```powershell
+   Set-Location extension/surfrag-extension; pnpm install
+   Set-Location ../../services/local-mcp-server; pnpm install
    ```
 
 2. **Run both servers** (in separate terminals):
 
-   ```bash
+   ```powershell
    # Terminal 1: Plasmo dev server (hot reload)
-   cd extension/surfrag-extension && pnpm dev
+   Set-Location extension/surfrag-extension; pnpm dev
 
    # Terminal 2: Local MCP server
-   cd services/local-mcp-server && pnpm dev
+   Set-Location services/local-mcp-server; pnpm dev
    ```
 
 3. **Load the extension** in Chrome:
