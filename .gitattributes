@@ -3,6 +3,7 @@
 # Keep source and docs LF-consistent across platforms
 *.md text eol=lf
 *.json text eol=lf
+.env* text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.js text eol=lf

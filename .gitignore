@@ -30,3 +30,15 @@
 
 # typescript
 /extension/surfrag-extension/.tsbuildinfo
+
+# dependencies
+/services/local-mcp-server/node_modules/
+
+# pernal env files
+/services/local-mcp-server/.env
+
+# SQLite local artifacts
+*.db
+*.db-shm
+*.db-wal
+services/local-mcp-server/data/
