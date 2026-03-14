@@ -149,6 +149,19 @@ function IndexPopup() {
         <p style={{ margin: "6px 0 0" }}>
           <strong>Last Sync Error:</strong> {lastSyncError || "(none)"}
         </p>
+        {queueLength > 0 && (
+          <button
+            onClick={() => {
+              chrome.storage.local.remove(PAGE_CAPTURES_SYNC_QUEUE_KEY, () => {
+                if (chrome.runtime.lastError) {
+                  console.error("Failed to clear queue:", chrome.runtime.lastError)
+                }
+              })
+            }}
+            style={{ marginTop: 8, width: "100%" }}>
+            Clear Sync Queue
+          </button>
+        )}
       </div>
 
       {!latestCapture ? (

@@ -16,6 +16,7 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH) => {
     db.exec(`
     CREATE TABLE IF NOT EXISTS captures (
       id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL UNIQUE,
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       referrer TEXT NOT NULL DEFAULT '',
@@ -29,13 +30,15 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH) => {
 
     CREATE INDEX IF NOT EXISTS idx_captures_url ON captures(url);
     CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);
+    CREATE INDEX IF NOT EXISTS idx_captures_page_id ON captures(page_id);
   `);
     return { db, dbPath: resolvedDbPath };
 };
-export const insertCapture = (db, capture) => {
+export const upsertCapture = (db, capture) => {
     const statement = db.prepare(`
     INSERT INTO captures (
       id,
+      page_id,
       title,
       url,
       referrer,
@@ -47,6 +50,7 @@ export const insertCapture = (db, capture) => {
       updated_at
     ) VALUES (
       @id,
+      @page_id,
       @title,
       @url,
       @referrer,
@@ -56,10 +60,20 @@ export const insertCapture = (db, capture) => {
       @source_session,
       @created_at,
       @updated_at
-    );
+    )
+    ON CONFLICT(page_id) DO UPDATE SET
+      title = excluded.title,
+      url = excluded.url,
+      referrer = excluded.referrer,
+      body_text = excluded.body_text,
+      max_scroll_percentage = excluded.max_scroll_percentage,
+      captured_at = excluded.captured_at,
+      source_session = excluded.source_session,
+      updated_at = excluded.updated_at
   `);
-    const result = statement.run({
+    statement.run({
         id: capture.id,
+        page_id: capture.pageId,
         title: capture.title,
         url: capture.url,
         referrer: capture.referrer,
@@ -70,9 +84,10 @@ export const insertCapture = (db, capture) => {
         created_at: capture.createdAt,
         updated_at: capture.updatedAt
     });
+    const row = db.prepare("SELECT id FROM captures WHERE page_id = ?").get(capture.pageId);
     return {
-        id: capture.id,
-        changes: result.changes
+        id: row.id,
+        changes: 1
     };
 };
 //# sourceMappingURL=sqlite.js.map

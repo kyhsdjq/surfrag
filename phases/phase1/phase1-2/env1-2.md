@@ -136,6 +136,7 @@ Use after `POST /captures` is implemented:
 
 ```powershell
 $payload = @{
+  pageId = "https://example.com::1731513600000"
   title = "Example Page"
   url = "https://example.com"
   referrer = ""

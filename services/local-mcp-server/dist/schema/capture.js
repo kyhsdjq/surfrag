@@ -5,6 +5,7 @@ const MAX_TITLE_LENGTH = 512;
 const MAX_URL_LENGTH = 2_048;
 const MAX_REFERRER_LENGTH = 2_048;
 const MAX_SOURCE_SESSION_LENGTH = 128;
+const MAX_PAGE_ID_LENGTH = 2_500;
 const trimAndCollapseWhitespace = (value) => value
     .replace(/\s+/g, " ")
     .trim();
@@ -17,6 +18,7 @@ const optionalTrimmed = (maxLength) => z
     .default("");
 export const captureIngestSchema = z
     .object({
+    pageId: z.string().min(1).max(MAX_PAGE_ID_LENGTH).trim(),
     title: z.string().min(1).max(MAX_TITLE_LENGTH).transform(trimAndCollapseWhitespace),
     url: z.url().max(MAX_URL_LENGTH),
     referrer: optionalTrimmed(MAX_REFERRER_LENGTH),
@@ -29,6 +31,7 @@ export const captureIngestSchema = z
 export const captureRecordSchema = z
     .object({
     id: z.string().uuid(),
+    pageId: z.string().min(1).max(MAX_PAGE_ID_LENGTH),
     title: z.string().min(1).max(MAX_TITLE_LENGTH),
     url: z.url().max(MAX_URL_LENGTH),
     referrer: z.string().max(MAX_REFERRER_LENGTH),
@@ -45,6 +48,7 @@ export const toCaptureRecord = (input, nowIso = new Date().toISOString()) => {
     const normalized = normalizeCaptureIngest(input);
     return captureRecordSchema.parse({
         id: randomUUID(),
+        pageId: normalized.pageId,
         title: normalized.title,
         url: normalized.url,
         referrer: normalized.referrer,

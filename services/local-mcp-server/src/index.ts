@@ -2,7 +2,7 @@ import "dotenv/config";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 
-import { bootstrapSqlite, insertCapture } from "./db/sqlite.js";
+import { bootstrapSqlite, upsertCapture } from "./db/sqlite.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
 
 // Create a Fastify app with built-in logging enabled.
@@ -17,7 +17,7 @@ app.get("/health", async () => ({ ok: true }));
 app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
   try {
     const captureRecord = toCaptureRecord(request.body);
-    const insertResult = insertCapture(db, captureRecord);
+    const insertResult = upsertCapture(db, captureRecord);
 
     reply.code(201);
 

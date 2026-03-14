@@ -91,6 +91,7 @@ const backoffDelayMs = (attempts: number) => {
 }
 
 const toSyncPayload = (record: PageCaptureRecord): CaptureSyncPayload => ({
+  pageId: record.id,
   title: record.title,
   url: record.url,
   referrer: record.referrer,

@@ -40,9 +40,18 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       })
 
       if (!response.ok) {
+        let errorMsg = `HTTP ${response.status}`
+        try {
+          const body = await response.json() as { issues?: Array<{ path: string[]; message: string }> }
+          if (Array.isArray(body?.issues) && body.issues.length > 0) {
+            errorMsg += `: ${body.issues.map((i) => i.message).join("; ")}`
+          }
+        } catch {
+          // ignore
+        }
         sendResponse({
           ok: false,
-          error: `HTTP ${response.status}`
+          error: errorMsg
         } satisfies SyncCaptureResponse)
         return
       }

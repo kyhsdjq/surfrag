@@ -1,5 +1,6 @@
 import { z } from "zod";
 export declare const captureIngestSchema: z.ZodObject<{
+    pageId: z.ZodString;
     title: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
     url: z.ZodURL;
     referrer: z.ZodDefault<z.ZodOptional<z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>>>;
@@ -12,6 +13,7 @@ export type CaptureIngestInput = z.input<typeof captureIngestSchema>;
 export type CaptureIngest = z.output<typeof captureIngestSchema>;
 export declare const captureRecordSchema: z.ZodObject<{
     id: z.ZodString;
+    pageId: z.ZodString;
     title: z.ZodString;
     url: z.ZodURL;
     referrer: z.ZodString;
@@ -24,6 +26,7 @@ export declare const captureRecordSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type CaptureRecord = z.infer<typeof captureRecordSchema>;
 export declare const normalizeCaptureIngest: (input: CaptureIngestInput) => {
+    pageId: string;
     title: string;
     url: string;
     referrer: string;

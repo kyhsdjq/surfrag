@@ -25,6 +25,7 @@ export type CaptureSyncQueueItem = {
 }
 
 export type CaptureSyncPayload = {
+  pageId: string
   title: string
   url: string
   referrer: string

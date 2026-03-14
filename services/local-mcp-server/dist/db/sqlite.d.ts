@@ -6,7 +6,7 @@ export type SqliteBootstrapResult = {
 };
 export declare const resolveDbPath: (dbPath?: string | undefined) => string;
 export declare const bootstrapSqlite: (dbPath?: string | undefined) => SqliteBootstrapResult;
-export declare const insertCapture: (db: Database.Database, capture: CaptureRecord) => {
+export declare const upsertCapture: (db: Database.Database, capture: CaptureRecord) => {
     id: string;
     changes: number;
 };
