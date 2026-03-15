@@ -31,16 +31,16 @@ This replaces the temporary JSON-file approach and keeps the architecture simple
 
 ## Implementation Steps
 
-1. **Create service workspace**
+1. **Create service workspace** [done]
    - Add a new folder (example: `services/local-mcp-server`).
    - Initialize TypeScript project and scripts (`dev`, `build`, `start`).
 
-2. **Define shared capture schema**
+2. **Define shared capture schema** [done]
    - Create a single capture type/schema for:
      - `title`, `url`, `referrer`, `bodyText`, `maxScrollPercentage`, `capturedAt`, `sourceSession`.
    - Reuse this schema in HTTP ingestion and MCP search tools.
 
-3. **Initialize SQLite and migrations**
+3. **Initialize SQLite and migrations** [done]
    - Add DB bootstrap on server startup.
    - Create table `captures` with indexes on:
      - `url`
@@ -48,18 +48,18 @@ This replaces the temporary JSON-file approach and keeps the architecture simple
      - optional FTS index (later step) for `body_text`.
    - Configure SQLite pragmas for local reliability/performance (for example WAL mode).
 
-4. **Implement ingestion API for extension**
+4. **Implement ingestion API for extension** [done]
    - Add `POST /captures` endpoint.
    - Validate payload, normalize text, upsert/insert records.
    - Return record id + status.
    - Add `GET /health` endpoint for extension connectivity checks.
 
-5. **Wire extension sync**
+5. **Wire extension sync** [done]
    - Update extension content script to send captured records to local API.
    - Keep `chrome.storage.local` as fallback queue when server is unavailable.
    - Add retry with exponential backoff.
 
-6. **Implement MCP search tools**
+6. **Implement MCP search tools** [done]
    - Add tool: `search_captures(keyword, limit, since?)`.
    - Add tool: `get_capture_by_id(id)`.
    - Query SQLite and return concise snippets + metadata (title/url/time).

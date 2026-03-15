@@ -24,12 +24,12 @@ It's a common misconception that React is only for "websites." A Chrome extensio
 
 ## Implementation Plan (Phase 1.1)
 
-1.  **Initialize Project:** Set up a Plasmo + React + TypeScript project.
+1.  **Initialize Project:** Set up a Plasmo + React + TypeScript project. [done]
 2.  **Content Script:** Create a script that runs on page load.
     *   Extract `document.title`, `window.location.href`.
     *   Extract `document.referrer` (Source).
     *   Extract main body text (using a library like `@mozilla/readability` or simple DOM traversal).
-3.  **Scroll Tracking:**
+3.  **Scroll Tracking:** [done]
     *   Add a scroll listener to update a `maxScrollPercentage` state.
     *   Save this metric when the user leaves the page or after a timeout.
-4.  **Storage:** Save the extracted data to `chrome.storage.local` or send to a local server.
+4.  **Storage:** Save the extracted data to `chrome.storage.local` or send to a local server. [done]

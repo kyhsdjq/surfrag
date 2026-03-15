@@ -25,7 +25,7 @@ const optionalTrimmed = (maxLength: number) =>
 
 export const captureIngestSchema = z
   .object({
-    pageId: z.string().min(1).max(MAX_PAGE_ID_LENGTH).trim(),
+    pageId: z.string().min(1).max(MAX_PAGE_ID_LENGTH).trim().optional(),
     title: z.string().min(1).max(MAX_TITLE_LENGTH).transform(trimAndCollapseWhitespace),
     url: z.url().max(MAX_URL_LENGTH),
     referrer: optionalTrimmed(MAX_REFERRER_LENGTH),
@@ -65,10 +65,11 @@ export const toCaptureRecord = (
   nowIso = new Date().toISOString()
 ): CaptureRecord => {
   const normalized = normalizeCaptureIngest(input)
+  const fallbackPageId = `${normalized.url}::${normalized.capturedAt ?? nowIso}`
 
   return captureRecordSchema.parse({
     id: randomUUID(),
-    pageId: normalized.pageId,
+    pageId: normalized.pageId ?? fallbackPageId,
     title: normalized.title,
     url: normalized.url,
     referrer: normalized.referrer,

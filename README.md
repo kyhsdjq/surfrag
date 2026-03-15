@@ -19,11 +19,20 @@ flowchart TB
     end
 
     subgraph "Phase 1.2 Local MCP Server"
-        G[""POST /captures""]
-        H[""SQLite database""]
-        I[""MCP search tools""]
-        J[""search_captures""]
-        K[""get_capture_by_id""]
+        subgraph "HTTP index.ts"
+            G[""POST /captures""]
+        end
+        subgraph "sqlite.ts"
+            H1[""bootstrapSqlite""]
+            H2[""upsertCapture""]
+            H3[""searchCaptures""]
+            H4[""getCaptureById""]
+        end
+        subgraph "MCP server.ts"
+            I[""search_captures tool""]
+            J[""get_capture_by_id tool""]
+        end
+        K[""SQLite DB""]
     end
 
     subgraph "IDE Cursor"
@@ -39,12 +48,15 @@ flowchart TB
     D --> F
     E -.-> F
     F --> G
-    G --> H
-    H --> I
-    I --> J
-    I --> K
+    G --> H2
+    H2 --> K
+    H1 --> K
+    I --> H3
+    H3 --> K
+    J --> H4
+    H4 --> K
+    I --> L
     J --> L
-    K --> L
 ```
 
 ## Requirements
@@ -73,28 +85,21 @@ Copy-Item services/local-mcp-server/.env.example services/local-mcp-server/.env
 
 ## Usage
 
-### End Users (Run Pre-built)
+### Extension
 
-1. **Start the local server** (required; must stay running):
+#### End Users
 
-   ```powershell
-   Set-Location services/local-mcp-server
-   pnpm install
-   pnpm build
-   pnpm start
-   ```
-
-2. **Load the extension in Chrome**:
+1. **Load the extension** in Chrome:
    - Open `chrome://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked"
    - Select `extension/surfrag-extension/build/chrome-mv3-prod/`
 
-3. **Configure the API URL** (if not using default): Click the SurfRAG icon, enter your server URL (e.g. `http://localhost:3030`), and click **Save API URL**.
+2. **Configure the API URL** (if not using default): Click the SurfRAG icon, enter your server URL (e.g. `http://localhost:3030`), and click **Save API URL**.
 
-4. Browse the web; the extension will capture pages and sync them to the local server.
+3. Browse the web; the extension will capture pages and sync them to the local server.
 
-### Developers (Build from Source)
+#### Developers
 
 1. **Install dependencies**:
 
@@ -103,17 +108,52 @@ Copy-Item services/local-mcp-server/.env.example services/local-mcp-server/.env
    Set-Location ../../services/local-mcp-server; pnpm install
    ```
 
-2. **Run both servers** (in separate terminals):
+2. **Run the Plasmo dev server** (hot reload):
 
    ```powershell
-   # Terminal 1: Plasmo dev server (hot reload)
    Set-Location extension/surfrag-extension; pnpm dev
-
-   # Terminal 2: Local MCP server
-   Set-Location services/local-mcp-server; pnpm dev
    ```
 
 3. **Load the extension** in Chrome:
    - Load the dev build from `extension/surfrag-extension/build/chrome-mv3-dev/`
 
 4. **Configure the API URL** (if needed): Click the SurfRAG icon in the toolbar, set the Local API Base URL to match your server (default `http://localhost:3030`), and click **Save API URL**.
+
+### Service
+
+Start the local server (required for the extension to sync captures). It must stay running.
+
+```powershell
+Set-Location services/local-mcp-server
+pnpm install
+pnpm build
+pnpm start
+```
+
+**Dev mode** (hot reload):
+
+```powershell
+Set-Location services/local-mcp-server; pnpm dev
+```
+
+### Add MCP to Your Agent
+
+To use the SurfRAG MCP tools (`search_captures`, `get_capture_by_id`) in Cursor or other MCP clients, add the server to your MCP configuration.
+
+Cursor uses `~/.cursor/mcp.json` (global) or the MCP section in Cursor Settings.
+
+Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo, e.g. `D:/surfrag`):
+
+```json
+{
+  "mcpServers": {
+    "surfrag-local": {
+      "command": "node",
+      "args": ["YOUR_WORKSPACE_PATH/services/local-mcp-server/dist/mcp/server.js"],
+      "env": {
+        "DB_PATH": "YOUR_WORKSPACE_PATH/services/local-mcp-server/data/surfrag.db"
+      }
+    }
+  }
+}
+```

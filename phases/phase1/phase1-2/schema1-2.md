@@ -8,7 +8,7 @@ This document defines the input/output schemas and LLM-oriented descriptions for
 
 ### Description
 
-Search across captured web pages by keyword. Matches in title, URL, and body text. Returns a list of matches with id, title, url, capturedAt, and a short snippet. Call `get_capture_by_id` with the returned id when you need full page content for answering. Maximum 50 results. Optional `since` parameter filters by capture date (ISO 8601).
+Search across captured web pages by keyword. Matches in title, URL, and body text. Returns a list of matches with id, pageId, title, url, capturedAt, and a short snippet. Call `get_capture_by_id` with the returned id when you need full page content for answering. Maximum 50 results. Optional `since` parameter filters by capture date (ISO 8601).
 
 ### Input Schema
 
@@ -57,6 +57,7 @@ The `text` field should include:
   "matches": [
     {
       "id": "string (UUID)",
+      "pageId": "string (stable page-session id)",
       "title": "string",
       "url": "string",
       "capturedAt": "string (ISO 8601)",
@@ -107,6 +108,7 @@ The `text` field contains JSON:
 {
   "capture": {
     "id": "string (UUID)",
+    "pageId": "string (stable page-session id)",
     "title": "string",
     "url": "string",
     "referrer": "string",

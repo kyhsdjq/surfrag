@@ -1,6 +1,6 @@
 import { z } from "zod";
 export declare const captureIngestSchema: z.ZodObject<{
-    pageId: z.ZodString;
+    pageId: z.ZodOptional<z.ZodString>;
     title: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
     url: z.ZodURL;
     referrer: z.ZodDefault<z.ZodOptional<z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>>>;
@@ -26,13 +26,13 @@ export declare const captureRecordSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type CaptureRecord = z.infer<typeof captureRecordSchema>;
 export declare const normalizeCaptureIngest: (input: CaptureIngestInput) => {
-    pageId: string;
     title: string;
     url: string;
     referrer: string;
     bodyText: string;
     maxScrollPercentage: number;
     sourceSession: string;
+    pageId?: string | undefined;
     capturedAt?: string | undefined;
 };
 export declare const toCaptureRecord: (input: CaptureIngestInput, nowIso?: string) => CaptureRecord;
