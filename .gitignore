@@ -34,7 +34,7 @@
 # dependencies
 /services/local-mcp-server/node_modules/
 
-# pernal env files
+# personal env files
 /services/local-mcp-server/.env
 
 # SQLite local artifacts

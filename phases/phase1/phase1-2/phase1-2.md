@@ -64,12 +64,12 @@ This replaces the temporary JSON-file approach and keeps the architecture simple
    - Add tool: `get_capture_by_id(id)`.
    - Query SQLite and return concise snippets + metadata (title/url/time).
 
-7. **Add basic ranking and snippet extraction**
+7. **Add basic ranking and snippet extraction** [done]
    - Start with `LIKE`/keyword matching.
    - Return top matches sorted by recency + keyword count.
    - Optionally migrate to SQLite FTS5 for faster full-text search.
 
-8. **Local developer setup**
+8. **Local developer setup** [done]
    - Add `.env.example` with `PORT` and `DB_PATH`.
    - Add run instructions in README:
      - start local server,
@@ -77,7 +77,7 @@ This replaces the temporary JSON-file approach and keeps the architecture simple
      - verify capture ingestion,
      - verify MCP search tool calls.
 
-9. **Testing and verification**
+9. **Testing and verification** [done]
    - Add minimal integration tests:
      - ingest capture -> persisted in SQLite
      - search returns expected capture
