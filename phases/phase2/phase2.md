@@ -35,7 +35,7 @@ flowchart TB
             G --> H2
             H2 --> K
             H2 --> EMB["Generate embeddings"]
-            EMB --> VDB["Vector DB"]
+            EMB --> VDB["LanceDB"]
         end
         subgraph "sqlite.ts"
             H1["bootstrapSqlite"]
@@ -86,15 +86,15 @@ flowchart TB
 
 | Component | Role |
 |-----------|------|
-| **Ingestion** | After `upsertCapture` writes to SQLite, the pipeline chunks `bodyText` (if needed), calls the embedding model, and writes vectors to the vector DB with `capture_id` as metadata. |
-| **Search** | New MCP tool `vector_search(query, limit)` embeds the query, runs similarity search in the vector DB, then joins with SQLite to fetch full capture metadata (title, url, snippet). |
-| **Co-location** | Vector DB runs inside the same Node.js process as the local-mcp-server. No separate service. |
+| **Ingestion** | After `upsertCapture` writes to SQLite, the pipeline chunks `bodyText` (if needed), calls the embedding model (GLM first), and writes vectors to LanceDB with `capture_id` as metadata. |
+| **Search** | New MCP tool `vector_search(query, limit)` embeds the query, runs similarity search in LanceDB, then joins with SQLite to fetch full capture metadata (title, url, snippet). |
+| **Co-location** | LanceDB runs inside the same Node.js process as the local-mcp-server. No separate service. |
 
 ### Data Flow
 
-1. **Capture arrives** → SQLite (metadata + full text) + Embedding model → Vector DB (embeddings + `capture_id`).
+1. **Capture arrives** → SQLite (metadata + full text) + Embedding model → LanceDB (embeddings + `capture_id`).
 2. **Keyword search** → SQLite only (unchanged).
-3. **Semantic search** → Embed query → Vector DB similarity → SQLite for metadata.
+3. **Semantic search** → Embed query → LanceDB similarity → SQLite for metadata.
 4. **Hybrid (future)** → Merge and re-rank results from both paths.
 
 ---
@@ -113,7 +113,7 @@ flowchart TB
 | **pgvector (PostgreSQL)** | Mature, SQL, good tooling | Requires PostgreSQL; breaks "zero-setup" local story |
 | **Memory (in-process)** | Simplest, no extra deps | No persistence; lost on restart; only for prototyping |
 
-**Recommendation for Phase 2:** **sqlite-vec** or **LanceDB**. sqlite-vec keeps everything in one SQLite file and aligns with the existing stack. LanceDB is a strong alternative if you want a dedicated vector store with minimal setup.
+**Selected for Phase 2:** **LanceDB**. Embedded, file-based, no separate server, good Node bindings. Keeps vector storage local and simple.
 
 ---
 
@@ -153,7 +153,7 @@ flowchart TB
 |--------|-------------------|------------------|
 | **Process** | Single Node.js process (HTTP + MCP) | Same; embedding + vector ops in-process |
 | **Async** | Sync SQLite | Embedding calls are async; ingestion should not block HTTP response |
-| **Config** | `PORT`, `DB_PATH` | Add `OPENAI_API_KEY`, `VECTOR_DB_PATH` |
+| **Config** | `PORT`, `DB_PATH` | Add `EMBED_PROVIDER`, `API_KEY`, `VECTOR_DB_PATH` |
 
 ---
 
@@ -182,7 +182,7 @@ EmbeddingProvider interface:
 | Provider | API | Config |
 |----------|-----|--------|
 | **OpenAI** | `text-embedding-3-small` | `OPENAI_API_KEY`, `OPENAI_BASE_URL` (optional) |
-| **GLM (智谱)** | `embedding-2` | `ZHIPU_API_KEY`, base URL for open.bigmodel.cn |
+| **GLM (智谱)** | `embedding-2` | `API_KEY`, base URL for open.bigmodel.cn |
 | **Ollama** | `nomic-embed-text` | `OLLAMA_BASE_URL` |
 | **Cohere** | `embed-v3` | `COHERE_API_KEY` |
 
@@ -215,7 +215,7 @@ EMBED_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 
 # GLM / 智谱 (when EMBED_PROVIDER=glm)
-ZHIPU_API_KEY=...
+API_KEY=...
 EMBED_MODEL=embedding-2
 
 # Ollama (when EMBED_PROVIDER=ollama)
@@ -225,9 +225,11 @@ EMBED_MODEL=nomic-embed-text
 
 ### 6. Implementation Outline for Adaptability
 
-1. Define `EmbeddingProvider` interface and implement `OpenAIEmbeddingProvider`.
-2. Add `GLMEmbeddingProvider` (智谱 `embedding-2`).
-3. Add `OllamaEmbeddingProvider` for local models.
+**Implement GLM first** (智谱 `embedding-2`), then add other providers.
+
+1. Define `EmbeddingProvider` interface.
+2. Implement `GLMEmbeddingProvider` (智谱 `embedding-2`) — **first**.
+3. Add `OpenAIEmbeddingProvider`, `OllamaEmbeddingProvider` (later).
 4. Add provider factory: `getEmbeddingProvider(env)` → selected implementation.
 5. Ensure vector DB supports configurable dimension (e.g. from provider or config).
 6. Keep MCP tool schemas and descriptions provider-agnostic.
@@ -236,19 +238,20 @@ EMBED_MODEL=nomic-embed-text
 
 ## Implementation Outline (Phase 2)
 
-1. **Choose and integrate vector DB** (sqlite-vec or LanceDB).
-2. **Choose and integrate embedding model** (OpenAI text-embedding-3-small).
-3. **Extend ingestion:** After `upsertCapture`, chunk (if needed), embed, upsert vectors.
+1. **Integrate LanceDB** as vector database (selected).
+2. **Implement `EmbeddingProvider` interface** and **GLM provider first** (智谱 `embedding-2`).
+3. **Extend ingestion:** After `upsertCapture`, chunk (if needed), embed, upsert vectors to LanceDB.
 4. **Add MCP tool:** `vector_search(query, limit, since?)`.
 5. **Optional:** Hybrid search tool combining keyword + vector results.
-6. **Config and docs:** `.env` additions, README update.
+6. **Config and docs:** `.env` additions (e.g. `API_KEY`, `VECTOR_DB_PATH`), README update.
 
 ---
 
 ## Deliverables for Phase 2
 
-- Vector database integrated into local-mcp-server.
+- **LanceDB** integrated into local-mcp-server.
+- **`EmbeddingProvider` interface** with **GLM provider** (智谱 `embedding-2`) implemented first.
 - Embedding pipeline for new captures (sync or async queue).
 - MCP tool `vector_search` returning semantically similar captures.
-- Documentation for embedding setup (OpenAI API key).
+- Documentation for embedding setup (e.g. `API_KEY` for GLM).
 - Optional: hybrid search combining keyword + semantic.

@@ -83,6 +83,17 @@ Copy-Item services/local-mcp-server/.env.example services/local-mcp-server/.env
 
 **Extension:** Click the SurfRAG icon in the Chrome toolbar, enter the API base URL (e.g. `http://localhost:3030`), then click **Save API URL**. The default is `http://localhost:3030`.
 
+## Embedding Configuration
+
+For semantic search, the server uses an embedding model to encode text into vectors. Configure the provider and API key in `services/local-mcp-server/.env`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBED_PROVIDER` | `glm` | Embedding provider: `glm`, `openai`, `ollama` |
+| `API_KEY` | — | API key for the embedding provider. GLM: get from [智谱 AI 开放平台](https://open.bigmodel.cn/) |
+| `EMBED_MODEL` | `embedding-2` | Model name (e.g. `embedding-2` for GLM) |
+| `VECTOR_DB_PATH` | `./data/lancedb` | Directory for LanceDB vector storage |
+
 ## Usage
 
 ### Extension
