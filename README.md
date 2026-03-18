@@ -7,36 +7,48 @@ A local-first web knowledge Q&A system powered by LightRAG and MCP. Syncs your b
 ```mermaid
 flowchart TB
     subgraph "User"
-        A[""User browses web""]
+        A["User browses web"]
     end
 
     subgraph "Phase 1.1 Extension"
-        B[""Content Script""]
-        C[""Extract page data""]
-        D[""Scroll tracking""]
-        E[""chrome.storage.local""]
-        F[""Send to Local API""]
+        B["Content Script"]
+        C["Extract page data"]
+        D["Scroll tracking"]
+        E["chrome.storage.local"]
+        F["Send to Local API"]
     end
 
-    subgraph "Phase 1.2 Local MCP Server"
+    subgraph "Phase 1.2 + Phase 2 Local MCP Server"
         subgraph "HTTP index.ts"
-            G[""POST /captures""]
+            G["POST /captures"]
+        end
+        subgraph "Ingestion Pipeline"
+            G --> H2
+            H2 --> K
+            H2 --> EMB["Generate embeddings"]
+            EMB --> VDB["LanceDB"]
         end
         subgraph "sqlite.ts"
-            H1[""bootstrapSqlite""]
-            H2[""upsertCapture""]
-            H3[""searchCaptures""]
-            H4[""getCaptureById""]
+            H1["bootstrapSqlite"]
+            H2["upsertCapture"]
+            H3["searchCaptures"]
+            H4["getCaptureById"]
+        end
+        subgraph "vector lancedb.ts"
+            V1["embedText"]
+            V2["upsertVectors"]
+            V3["vectorSearch"]
         end
         subgraph "MCP server.ts"
-            I[""search_captures tool""]
-            J[""get_capture_by_id tool""]
+            I["search_captures (keyword)"]
+            J["get_capture_by_id"]
+            NEW["vector_search (semantic)"]
         end
-        K[""SQLite DB""]
+        K["SQLite DB"]
     end
 
     subgraph "IDE Cursor"
-        L[""MCP client query""]
+        L["MCP client query"]
     end
 
     A --> B
@@ -48,15 +60,18 @@ flowchart TB
     D --> F
     E -.-> F
     F --> G
-    G --> H2
-    H2 --> K
     H1 --> K
     I --> H3
     H3 --> K
     J --> H4
     H4 --> K
+    NEW --> V3
+    V3 --> VDB
+    EMB --> V1
+    V2 --> VDB
     I --> L
     J --> L
+    NEW --> L
 ```
 
 ## Requirements

@@ -43,8 +43,8 @@
 *.db-wal
 
 # local-mcp-server data (SQLite + LanceDB)
-services/local-mcp-server/data/
+/services/local-mcp-server/data/
 
 # local-mcp-server build
-services/local-mcp-server/dist/
-services/local-mcp-server/.tsbuildinfo
+/services/local-mcp-server/dist/
+/services/local-mcp-server/.tsbuildinfo

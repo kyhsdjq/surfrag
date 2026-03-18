@@ -4,9 +4,9 @@ import path from "node:path"
 import Database from "better-sqlite3"
 
 import type { CaptureRecord } from "../schema/capture.js"
+import { buildSearchMatch, buildSnippet, type SearchMatch } from "../search/match.js"
 
 const DEFAULT_DB_PATH = "./data/surfrag.db"
-const MAX_SNIPPET_LENGTH = 220
 
 export type SqliteBootstrapResult = {
   db: Database.Database
@@ -27,14 +27,6 @@ type CaptureRow = {
   updated_at: string
 }
 
-export type SearchCaptureMatch = {
-  id: string
-  title: string
-  url: string
-  capturedAt: string
-  snippet: string
-  keywordCount: number
-}
 
 const normalizeRecord = (row: CaptureRow): CaptureRecord => ({
   id: row.id,
@@ -72,28 +64,6 @@ const countKeyword = (text: string, keyword: string) => {
   }
 
   return count
-}
-
-const buildSnippet = (text: string, keyword: string) => {
-  const normalized = text.replace(/\s+/g, " ").trim()
-  if (!normalized) {
-    return ""
-  }
-
-  const lowerText = normalized.toLowerCase()
-  const lowerKeyword = keyword.trim().toLowerCase()
-  const matchIndex = lowerKeyword ? lowerText.indexOf(lowerKeyword) : -1
-
-  if (matchIndex === -1) {
-    return normalized.slice(0, MAX_SNIPPET_LENGTH)
-  }
-
-  const start = Math.max(0, matchIndex - Math.floor(MAX_SNIPPET_LENGTH / 3))
-  const end = Math.min(normalized.length, start + MAX_SNIPPET_LENGTH)
-  const prefix = start > 0 ? "..." : ""
-  const suffix = end < normalized.length ? "..." : ""
-
-  return `${prefix}${normalized.slice(start, end)}${suffix}`
 }
 
 export const resolveDbPath = (dbPath = process.env.DB_PATH) => {
@@ -265,16 +235,13 @@ export const searchCaptures = (
       since: since ?? null
     }) as { count: number }
 
-  const matches: SearchCaptureMatch[] = rows.map((row) => {
+  const matches: SearchMatch[] = rows.map((row) => {
+    const capture = normalizeRecord(row)
     const haystack = `${row.title} ${row.url} ${row.body_text}`
-    return {
-      id: row.id,
-      title: row.title,
-      url: row.url,
-      capturedAt: row.captured_at,
+    return buildSearchMatch(capture, {
       snippet: buildSnippet(row.body_text, keyword),
       keywordCount: countKeyword(haystack, keyword)
-    }
+    })
   })
 
   return {
