@@ -1,18 +1,76 @@
 import "dotenv/config";
+import path from "node:path";
+import { mkdirSync } from "node:fs";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { bootstrapSqlite, upsertCapture } from "./db/sqlite.js";
 import { toCaptureRecord } from "./schema/capture.js";
-// Create a Fastify app with built-in logging enabled.
+import { getEmbeddingProvider } from "./embedding/index.js";
+import { getChunkingStrategy } from "./chunking/index.js";
+import { bootstrapLanceDB } from "./vector/lancedb.js";
+const DEFAULT_VECTOR_DB_PATH = "./data/lancedb";
 const app = Fastify({ logger: true });
 const { db, dbPath } = bootstrapSqlite();
 app.log.info({ dbPath }, "SQLite bootstrap complete");
+/** Whether vector indexing is enabled (requires API_KEY and VECTOR_DB_PATH). */
+function canBootstrapVectorIndexing() {
+    const apiKey = (process.env.API_KEY ?? process.env.ZHIPU_API_KEY)?.trim();
+    return !!apiKey;
+}
+let lanceClient = null;
+if (canBootstrapVectorIndexing()) {
+    try {
+        const vectorPath = process.env.VECTOR_DB_PATH?.trim() || DEFAULT_VECTOR_DB_PATH;
+        const resolvedPath = path.resolve(process.cwd(), vectorPath);
+        mkdirSync(resolvedPath, { recursive: true });
+        const embedProvider = getEmbeddingProvider();
+        lanceClient = await bootstrapLanceDB({
+            path: resolvedPath,
+            tableName: "capture_vectors",
+            dimension: embedProvider.dimension
+        });
+        app.log.info({ path: resolvedPath, dimension: embedProvider.dimension }, "LanceDB bootstrap complete");
+    }
+    catch (err) {
+        app.log.warn({ err, msg: "Vector indexing disabled; keyword search only" }, "Failed to bootstrap LanceDB");
+        lanceClient = null;
+    }
+}
+else {
+    app.log.info("Vector indexing disabled (missing API_KEY); keyword search only");
+}
 // Simple health-check endpoint to verify the service is alive.
 app.get("/health", async () => ({ ok: true }));
 app.post("/captures", async (request, reply) => {
     try {
         const captureRecord = toCaptureRecord(request.body);
         const insertResult = upsertCapture(db, captureRecord);
+        // Phase 2.2: embed and upsert vectors (await before reply)
+        if (lanceClient) {
+            try {
+                const chunker = getChunkingStrategy();
+                const embedProvider = getEmbeddingProvider();
+                const chunks = chunker.chunk(captureRecord.bodyText);
+                const texts = chunks.map((c) => c.text);
+                const vectors = await embedProvider.embedBatch(texts);
+                const records = vectors.map((v, i) => ({
+                    vector: v,
+                    capture_id: insertResult.id,
+                    chunk_index: chunks[i].index
+                }));
+                await lanceClient.upsertVectors(insertResult.id, records);
+            }
+            catch (vectorErr) {
+                request.log.error({ err: vectorErr, captureId: insertResult.id }, "Failed to index vectors");
+                reply.code(500);
+                return {
+                    ok: false,
+                    status: "vector_index_failed",
+                    id: insertResult.id,
+                    message: "Capture persisted but vector indexing failed"
+                };
+            }
+        }
         reply.code(201);
         return {
             ok: true,

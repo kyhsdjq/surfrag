@@ -25,11 +25,13 @@ This document defines the schema for vector embeddings stored in LanceDB, used f
 |--------|------|-------------|
 | `vector` | `number[]` (fixed-length) | Embedding vector. Dimension from config (e.g., 1024 for GLM `embedding-2`, 1536 for OpenAI `text-embedding-3-small`). |
 | `capture_id` | `string` | UUID of the capture in SQLite. Links to `captures.id`. |
+| `chunk_index` | `number` | 0-based index of the chunk within the capture. Whole-page: 0. Enables ordering and "which chunk matched" at search time. |
 
 ### Constraints
 
 - **vector:** Non-null, length = `EMBED_DIMENSION` (from embedding provider).
-- **capture_id:** Non-null. Not unique (allows multiple chunks per capture in future).
+- **capture_id:** Non-null. Not unique (allows multiple chunks per capture).
+- **chunk_index:** Non-null. Same capture may have multiple rows with different chunk_index.
 
 ### Index
 
@@ -43,11 +45,13 @@ LanceDB creates a vector index on the `vector` column for similarity search. No 
 export type VectorRecord = {
   vector: number[]
   capture_id: string
+  chunk_index: number
 }
 
 export type VectorSearchResult = {
   capture_id: string
-  _distance?: number  // LanceDB returns distance (lower = more similar)
+  chunk_index?: number  // optional; include when selected in search
+  _distance?: number    // LanceDB returns distance (lower = more similar)
 }
 ```
 
@@ -61,7 +65,7 @@ When the table does not exist, create it with a placeholder row (to establish sc
 const placeholderVector = new Array<number>(dimension).fill(0)
 table = await db.createTable(
   "capture_vectors",
-  [{ vector: placeholderVector, capture_id: "__placeholder__" }],
+  [{ vector: placeholderVector, capture_id: "__placeholder__", chunk_index: 0 }],
   { mode: "create", existOk: false }
 )
 await table.delete("capture_id = '__placeholder__'")
@@ -85,9 +89,15 @@ This ensures the vector index always reflects the latest content. See `phase2-2.
 | Source | LanceDB |
 |--------|---------|
 | `insertResult.id` (from `upsertCapture` — SQLite) | `capture_id` |
-| `embed(capture.bodyText)` (EmbeddingProvider) | `vector` |
+| `embedBatch(chunks.map(c => c.text))` (EmbeddingProvider) | `vector` |
+| `chunks[i].index` (from ChunkingStrategy) | `chunk_index` |
 
-**Source chain:** Extension `CaptureSyncPayload` (schema1-1) → `toCaptureRecord` → `upsertCapture` → `insertResult.id` + `captureRecord.bodyText`.
+**Source chain:** Extension `CaptureSyncPayload` (schema1-1) → `toCaptureRecord` → `upsertCapture` → `chunker.chunk(bodyText)` → `embedBatch` → `VectorRecord[]`. See `phase2-2.md` Chunking Design.
+
+### How `capture_id` and `chunk_index` are generated
+
+- **capture_id:** From `upsertCapture`’s `insertResult.id`. New capture: UUID from `toCaptureRecord` (randomUUID). Update (same pageId): existing row’s id (unchanged by `ON CONFLICT`). Always use `insertResult.id`, not `captureRecord.id`.
+- **chunk_index:** From `chunks[i].index` produced by the chunker. Whole-page: always 0. Other strategies: 0, 1, 2, … in chunk order.
 
 ---
 
