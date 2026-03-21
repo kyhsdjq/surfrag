@@ -36,15 +36,17 @@ LightRAG provides a FastAPI server with REST endpoints:
 
 ---
 
-## Architecture Options
+## Architecture: LightRAG as Sidecar
 
-| Option | Description | Pros | Cons |
-|--------|-------------|------|------|
-| **A. LightRAG as sidecar** | Run LightRAG API server as a separate process; MCP calls it via HTTP. | Clear separation; LightRAG runs independently. | Two processes to manage; need to start LightRAG before MCP. |
-| **B. Node spawns LightRAG** | Node MCP server spawns LightRAG subprocess on startup; communicates via HTTP (localhost). | Single entry point; can auto-start LightRAG. | Process lifecycle; Python must be installed. |
-| **C. Shared storage, no API** | Use LightRAG's storage format; call LightRAG Python via `child_process.exec` per request. | No long-running Python server. | Slow (cold start per query); complex. |
+Run the LightRAG API server as a **separate process**; the MCP server calls it via HTTP.
 
-**Recommendation:** **Option A (sidecar)** for Phase 3. Run `lightrag-server` (or equivalent) as a separate process. The MCP server calls `http://localhost:LIGHTRAG_PORT` for insert and query. Document startup order (LightRAG first, then MCP). Option B can be explored later (e.g. `pnpm start:all` that starts both).
+| Aspect | Details |
+|--------|---------|
+| **Separation** | LightRAG runs independently; clear process boundaries. |
+| **Communication** | MCP → HTTP → LightRAG (`http://localhost:LIGHTRAG_PORT`). |
+| **Startup order** | Start LightRAG first, then MCP. Document in README. |
+
+**Config:** `LIGHTRAG_URL` (e.g. `http://localhost:8020`) points to the LightRAG API server.
 
 ---
 

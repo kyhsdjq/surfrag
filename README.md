@@ -81,6 +81,20 @@ flowchart TB
 - pnpm
 - Chrome
 
+## Submodules
+
+This repo uses git submodules (LightRAG in `services/lightrag/`). After cloning, run:
+
+```powershell
+git submodule update --init --recursive
+```
+
+Or clone with submodules in one step:
+
+```powershell
+git clone --recurse-submodules <repo-url>
+```
+
 ## Port Configuration
 
 The extension sends captured page data to the local API. Both components must use the same base URL (host + port).

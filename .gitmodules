@@ -1,0 +1,3 @@
+[submodule "services/lightrag"]
+	path = services/lightrag
+	url = git@github.com:kyhsdjq/LightRAG.git
