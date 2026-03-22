@@ -80,6 +80,7 @@ flowchart TB
 - Node.js v20 LTS
 - pnpm
 - Chrome
+- **LightRAG (optional):** uv, Python 3.10-3.12, bun — see [env3-2.md](phases/phase3/phase3-2/env3-2.md)
 
 ## Submodules
 
@@ -102,6 +103,7 @@ The extension sends captured page data to the local API. Both components must us
 | Component        | Default URL           | Config Location                                      |
 |------------------|-----------------------|------------------------------------------------------|
 | local-mcp-server | `http://localhost:3030` | `services/local-mcp-server/.env` (`PORT`)            |
+| LightRAG server  | `http://localhost:9621` | `services/lightrag/.env`                             |
 | Extension        | `http://localhost:3030` | Chrome popup → **Local API Base URL** → Save API URL |
 
 **Server:** Create `services/local-mcp-server/.env` from the example and set `PORT=3030` (or your preferred port):
@@ -159,9 +161,32 @@ For semantic search, the server uses an embedding model to encode text into vect
 
 4. **Configure the API URL** (if needed): Click the SurfRAG icon in the toolbar, set the Local API Base URL to match your server (default `http://localhost:3030`), and click **Save API URL**.
 
+### LightRAG Server (Optional)
+
+LightRAG powers graph-based RAG retrieval. Run it as a separate process alongside the local MCP server.
+
+**Prerequisites:** uv, Python 3.10-3.12, bun — see [env3-2.md](phases/phase3/phase3-2/env3-2.md) to verify or install.
+
+**First-time setup:**
+
+```powershell
+Set-Location services/lightrag
+uv sync --extra api
+Set-Location lightrag_webui; bun install --frozen-lockfile; bun run build; Set-Location ..
+Copy-Item env.example .env
+# Edit .env with your LLM and embedding API keys
+```
+
+**Run the server:**
+
+```powershell
+Set-Location services/lightrag
+uv run lightrag-server
+```
+
 ### Service
 
-Start the local server (required for the extension to sync captures). It must stay running.
+Start the local MCP server (required for the extension to sync captures). It must stay running.
 
 ```powershell
 Set-Location services/local-mcp-server

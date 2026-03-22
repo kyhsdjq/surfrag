@@ -43,10 +43,10 @@ Run the LightRAG API server as a **separate process**; the MCP server calls it v
 | Aspect | Details |
 |--------|---------|
 | **Separation** | LightRAG runs independently; clear process boundaries. |
-| **Communication** | MCP → HTTP → LightRAG (`http://localhost:LIGHTRAG_PORT`). |
+| **Communication** | MCP → HTTP → LightRAG (`http://localhost:9621`). |
 | **Startup order** | Start LightRAG first, then MCP. Document in README. |
 
-**Config:** `LIGHTRAG_URL` (e.g. `http://localhost:8020`) points to the LightRAG API server.
+**Config:** `LIGHTRAG_URL` (e.g. `http://localhost:9621`) points to the LightRAG API server. Default port 9621 is LightRAG's built-in default.
 
 ---
 
@@ -86,7 +86,7 @@ This gives LightRAG enough context for entity extraction and retrieval.
 - **Directory:** `services/lightrag/` (or run from a dedicated env).
 - **Config:** Python venv, `pip install "lightrag-hku[api]"`, configure LLM and embedding (OpenAI/GLM compatible).
 - **Storage:** LightRAG uses its own storage (graph DB + vector). Configure path (e.g. `./data/lightrag`) separate from LanceDB.
-- **Start:** `lightrag-server` or `uvicorn` on configurable port (e.g. 8020).
+- **Start:** `lightrag-server` or `uvicorn` on configurable port (default 9621).
 
 ### 2. Sync Captures to LightRAG
 
@@ -110,7 +110,7 @@ This gives LightRAG enough context for entity extraction and retrieval.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIGHTRAG_URL` | `http://localhost:8020` | LightRAG API server base URL. |
+| `LIGHTRAG_URL` | `http://localhost:9621` | LightRAG API server base URL (9621 is LightRAG default port). |
 | `LIGHTRAG_INSERT_ENABLED` | `true` | Whether to sync new captures to LightRAG. |
 | `LIGHTRAG_QUERY_ENABLED` | `true` | Whether to register `lightrag_query` tool. |
 
