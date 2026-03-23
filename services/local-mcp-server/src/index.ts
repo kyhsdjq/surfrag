@@ -10,7 +10,7 @@ import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
 import { syncCaptureToLightRAG } from "./lightrag/sync.js";
 import { getEmbeddingProvider } from "./embedding/index.js";
 import { getChunkingStrategy } from "./chunking/index.js";
-import { canBootstrapVectorIndexing } from "./vector/bootstrap.js";
+import { canBootstrapVectorIndexing, isVectorDbEnabled } from "./vector/bootstrap.js";
 import { bootstrapLanceDB, type LanceDBClient } from "./vector/lancedb.js";
 
 const DEFAULT_VECTOR_DB_PATH = "./data/lancedb";
@@ -57,15 +57,23 @@ if (canBootstrapVectorIndexing()) {
     );
   } catch (err) {
     app.log.warn(
-      { err, msg: "Vector indexing disabled; keyword search only" },
-      "Failed to bootstrap LanceDB"
+      { err },
+      "LanceDB bootstrap failed (keyword search and LightRAG remain available)"
     );
     lanceClient = null;
   }
 } else {
+  const reason = !isVectorDbEnabled()
+    ? "VECTOR_DB_ENABLED=false (LightRAG is primary)"
+    : "missing API_KEY";
   app.log.info(
-    "Vector indexing disabled (missing API_KEY); keyword search only"
+    { reason },
+    "Vector indexing disabled"
   );
+}
+
+if (lightragInsertEnabled && lightragUrl) {
+  app.log.info({ lightragUrl }, "LightRAG sync enabled");
 }
 
 // Simple health-check endpoint to verify the service is alive.

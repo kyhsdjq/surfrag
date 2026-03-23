@@ -123,7 +123,7 @@ If `LIGHTRAG_URL` is unreachable, `lightrag_query` returns an error (similar to 
 - [ ] **LightRAG service** — Python env, config, startup script (or Docker).
 - [ ] **Sync pipeline** — Call LightRAG `/insert` when captures arrive (sync or async).
 - [ ] **MCP tool** — `lightrag_query(query, mode?, limit?)` calling LightRAG `/query`.
-- [ ] **Schema** — `schema3-1.md` for `lightrag_query` input/output.
+- [ ] **Schema** — `schema3-4.md` for `lightrag_query` input/output.
 - [ ] **Docs** — README update: how to run LightRAG, env vars, startup order.
 
 ---
@@ -132,7 +132,7 @@ If `LIGHTRAG_URL` is unreachable, `lightrag_query` returns an error (similar to 
 
 - Phase 1 (extension, captures, SQLite).
 - Phase 2 (vector ingestion, LanceDB, embedding).
-- Python 3.10+ with LightRAG installed.
+- Python 3.10-3.12 with LightRAG installed.
 
 ---
 

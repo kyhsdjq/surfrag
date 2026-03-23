@@ -32,7 +32,7 @@ export type BootstrapOptions = {
 
 /**
  * Bootstrap LanceDB and embedding provider when env is configured.
- * Returns null if API_KEY is missing or bootstrap fails.
+ * Returns null if VECTOR_DB_ENABLED is false, API_KEY is missing, or bootstrap fails.
  */
 export async function bootstrapVectorIfEnabled(
   options?: BootstrapOptions

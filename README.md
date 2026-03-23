@@ -5,77 +5,37 @@ A local-first web knowledge Q&A system powered by LightRAG and MCP. Syncs your b
 ## Project Architecture
 
 ```mermaid
-flowchart TB
-    subgraph User["User"]
-        A["User browses web"]
+flowchart LR
+    subgraph Ingest["Ingestion"]
+        EXT["Chrome Extension"]
+        HTTP["POST /captures"]
+        EXT -->|"sync"| HTTP
     end
 
-    subgraph Ext["Phase 1.1 Extension"]
-        B["Content Script"]
-        C["Extract page data"]
-        D["Scroll tracking"]
-        E["chrome.storage.local"]
-        F["Send to Local API"]
+    subgraph Storage["Storage"]
+        SQLITE["SQLite"]
+        LR["LightRAG"]
+        LANCEDB["LanceDB"]
     end
 
-    subgraph Server["Phase 1.2 + Phase 2 + Phase 3 Local MCP Server"]
-        subgraph HTTP["HTTP index.ts"]
-            G["POST /captures"]
+    subgraph Query["Query"]
+        subgraph Tools["MCP Tools"]
+            T1["search_captures"]
+            T2["lightrag_query"]
+            T3["vector_search"]
+            T4["get_capture_by_id"]
         end
-        subgraph Ingestion["Ingestion Pipeline"]
-            G --> H2
-            H2 --> K["SQLite DB"]
-            H2 -.->|"VECTOR_DB_ENABLED"| EMB["Generate embeddings"]
-            EMB --> VDB["LanceDB"]
-            H2 -.->|"LIGHTRAG_INSERT_ENABLED"| LR["LightRAG /documents/text"]
-        end
-        subgraph SQLite["sqlite.ts"]
-            H1["bootstrapSqlite"]
-            H2["upsertCapture"]
-            H3["searchCaptures"]
-            H4["getCaptureById"]
-        end
-        subgraph Vector["vector lancedb.ts"]
-            V1["embedText"]
-            V2["upsertVectors"]
-            V3["vectorSearch"]
-        end
-        subgraph MCP["MCP server.ts"]
-            I["search_captures (keyword)"]
-            J["get_capture_by_id"]
-            VSEARCH["vector_search (semantic)"]
-        end
+        IDE["IDE / Cursor"]
+        Tools <--> IDE
     end
 
-    subgraph LightRAG["LightRAG Service"]
-        LR -.-> KG["Knowledge Graph + Vectors"]
-    end
+    HTTP -->|"always"| SQLITE
+    HTTP -.->|"default"| LR
+    HTTP -.->|"optional"| LANCEDB
 
-    subgraph IDE["IDE Cursor"]
-        L["MCP client query"]
-    end
-
-    A --> B
-    B --> C
-    B --> D
-    C --> E
-    C --> F
-    D --> E
-    D --> F
-    E -.-> F
-    F --> G
-    H1 --> K
-    I --> H3
-    H3 --> K
-    J --> H4
-    H4 --> K
-    VSEARCH --> V3
-    V3 --> VDB
-    EMB --> V1
-    V2 --> VDB
-    I --> L
-    J --> L
-    VSEARCH --> L
+    SQLITE --> T1 & T4
+    LR --> T2
+    LANCEDB --> T3
 ```
 
 ## Requirements
@@ -133,13 +93,16 @@ Create `services/local-mcp-server/.env` from `.env.example` and configure:
 | `EMBED_MODEL` | `embedding-2` | Model name (e.g. `embedding-2` for GLM) |
 | `VECTOR_DB_PATH` | `./data/lancedb` | Directory for LanceDB vector storage |
 | `VECTOR_DB_ENABLED` | `false` | Store captures in LanceDB (vector search). `true` to enable as second choice. |
+| `SEARCH_CAPTURES_ENABLED` | `false` | Show `search_captures` MCP tool (keyword search). Set `true` to enable. |
+| `VECTOR_SEARCH_ENABLED` | `false` | Show `vector_search` MCP tool. Set `true` when using vector search. Requires VECTOR_DB_ENABLED, API_KEY. |
 | `LIGHTRAG_INSERT_ENABLED` | `true` | Sync captures to LightRAG (default). Set `false` to disable. |
+| `LIGHTRAG_QUERY_ENABLED` | `true` | Enable `lightrag_query` MCP tool. Set `false` to hide. |
 | `LIGHTRAG_URL` | `http://localhost:9621` | LightRAG API base URL. Start LightRAG server first. |
 | `LIGHTRAG_API_KEY` | — | Optional. LightRAG API key (X-API-Key header) when auth is enabled. |
 
 **Default setup (LightRAG):** Start the LightRAG server, then the MCP server. Captures sync to LightRAG by default. Keyword search always available.
 
-**Vector search (optional):** Set `VECTOR_DB_ENABLED=true` and `API_KEY` to also index captures in LanceDB for semantic search via `vector_search`.
+**Keyword/vector search (optional):** Set `SEARCH_CAPTURES_ENABLED=true` for keyword search, or `VECTOR_SEARCH_ENABLED=true` + `VECTOR_DB_ENABLED=true` + `API_KEY` for vector search. `get_capture_by_id` is only enabled when either is enabled.
 
 ### LightRAG (.env)
 
@@ -235,7 +198,7 @@ Set-Location services/local-mcp-server; pnpm dev
 
 To use the SurfRAG MCP tools in Cursor or other MCP clients, add the server to your MCP configuration.
 
-**Tools:** `search_captures` (keyword), `lightrag_query` (graph RAG, default), `vector_search` (semantic, optional), `get_capture_by_id`
+**Tools:** `lightrag_query` (graph RAG, default), `search_captures` (keyword, optional), `vector_search` (semantic, optional), `get_capture_by_id` (only when search_captures or vector_search enabled)
 
 Cursor uses `~/.cursor/mcp.json` (global) or the MCP section in Cursor Settings.
 
@@ -249,6 +212,7 @@ Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo,
       "args": ["YOUR_WORKSPACE_PATH/services/local-mcp-server/dist/mcp/server.js"],
       "env": {
         "DB_PATH": "YOUR_WORKSPACE_PATH/services/local-mcp-server/data/surfrag.db",
+        "LIGHTRAG_URL": "http://localhost:9621",
         "VECTOR_DB_PATH": "YOUR_WORKSPACE_PATH/services/local-mcp-server/data/lancedb"
       }
     }
@@ -256,4 +220,4 @@ Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo,
 }
 ```
 
-When Cursor runs MCP, `cwd` may differ. Pass `DB_PATH` as absolute path. Set `LIGHTRAG_URL` for LightRAG sync (default). Optional: `VECTOR_DB_PATH`, `VECTOR_DB_ENABLED`, `API_KEY` for vector search.
+When Cursor runs MCP, `cwd` may differ. Pass `DB_PATH` as absolute path. `LIGHTRAG_URL` is required for LightRAG (default). Optional: `VECTOR_SEARCH_ENABLED`, `VECTOR_DB_PATH`, `VECTOR_DB_ENABLED`, `API_KEY` for vector search. Start LightRAG server before the MCP server.
