@@ -7,22 +7,33 @@ import { ZodError } from "zod";
 
 import { bootstrapSqlite, upsertCapture } from "./db/sqlite.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
+import { syncCaptureToLightRAG } from "./lightrag/sync.js";
 import { getEmbeddingProvider } from "./embedding/index.js";
 import { getChunkingStrategy } from "./chunking/index.js";
+import { canBootstrapVectorIndexing } from "./vector/bootstrap.js";
 import { bootstrapLanceDB, type LanceDBClient } from "./vector/lancedb.js";
 
 const DEFAULT_VECTOR_DB_PATH = "./data/lancedb";
+const DEFAULT_LIGHTRAG_URL = "http://localhost:9621";
+
+/** Parse boolean env: true, 1, yes, on => true; false, 0, no, off => false */
+function parseBoolEnv(value: string | undefined): boolean {
+  const v = value?.toLowerCase().trim();
+  return v === "true" || v === "1" || v === "yes" || v === "on";
+}
+
+/** LIGHTRAG_INSERT_ENABLED defaults to true when unset (LightRAG is primary). */
+const lightragInsertEnabled =
+  (process.env.LIGHTRAG_INSERT_ENABLED?.trim() ?? "") === ""
+    ? true
+    : parseBoolEnv(process.env.LIGHTRAG_INSERT_ENABLED);
+const lightragUrl = process.env.LIGHTRAG_URL?.trim() || DEFAULT_LIGHTRAG_URL;
+const lightragApiKey = process.env.LIGHTRAG_API_KEY?.trim() || null;
 
 const app = Fastify({ logger: true });
 const { db, dbPath } = bootstrapSqlite();
 
 app.log.info({ dbPath }, "SQLite bootstrap complete");
-
-/** Whether vector indexing is enabled (requires API_KEY and VECTOR_DB_PATH). */
-function canBootstrapVectorIndexing(): boolean {
-  const apiKey = (process.env.API_KEY ?? process.env.ZHIPU_API_KEY)?.trim();
-  return !!apiKey;
-}
 
 let lanceClient: LanceDBClient | null = null;
 
@@ -95,6 +106,16 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
           message: "Capture persisted but vector indexing failed"
         };
       }
+    }
+
+    // Phase 3.3: sync to LightRAG (fire-and-forget)
+    if (lightragInsertEnabled && lightragUrl) {
+      void syncCaptureToLightRAG(
+        captureRecord,
+        lightragUrl,
+        lightragApiKey,
+        request.log
+      );
     }
 
     reply.code(201);

@@ -6,13 +6,21 @@ import { getEmbeddingProvider, type EmbeddingProvider } from "../embedding/index
 
 const DEFAULT_VECTOR_DB_PATH = "./data/lancedb"
 
+/** VECTOR_DB_ENABLED defaults to false when unset (LightRAG is primary). Explicit true/1/yes/on enables. */
+export function isVectorDbEnabled(): boolean {
+  const v = process.env.VECTOR_DB_ENABLED?.toLowerCase().trim()
+  if (v === undefined || v === "") return false
+  return ["true", "1", "yes", "on"].includes(v)
+}
+
 export type VectorBootstrapResult = {
   lanceClient: LanceDBClient
   embedProvider: EmbeddingProvider
 }
 
-/** Whether vector indexing can be bootstrapped (requires API_KEY). */
+/** Whether vector indexing can be bootstrapped (requires VECTOR_DB_ENABLED and API_KEY). */
 export function canBootstrapVectorIndexing(): boolean {
+  if (!isVectorDbEnabled()) return false
   const apiKey = (process.env.API_KEY ?? process.env.ZHIPU_API_KEY)?.trim()
   return !!apiKey
 }
