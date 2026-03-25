@@ -1,13 +1,24 @@
 import { Readability } from "@mozilla/readability"
 
 import {
+  AUTO_CAPTURE_ACTIVE_MINUTES_STORAGE_KEY,
+  BLOCKLIST_STORAGE_KEY,
+  CONTENT_GET_DOCUMENT_CAPTURE_STATE,
+  CONTENT_TRIGGER_BOOKMARK_CAPTURE,
+  CONTENT_TRIGGER_MANUAL_CAPTURE,
+  DEFAULT_AUTO_CAPTURE_ACTIVE_MINUTES,
+  DEFAULT_BLOCKLIST_PATTERNS,
+  MAX_AUTO_CAPTURE_ACTIVE_MINUTES,
   MAX_CAPTURE_HISTORY,
   MAX_SYNC_QUEUE_SIZE,
+  MIN_AUTO_CAPTURE_ACTIVE_MINUTES,
   PAGE_CAPTURES_SYNC_QUEUE_KEY,
   PAGE_CAPTURES_STORAGE_KEY,
   SYNC_CAPTURE_MESSAGE_TYPE,
   type CaptureSyncPayload,
   type CaptureSyncQueueItem,
+  type ContentCaptureTriggerResponse,
+  type DocumentCaptureStateResponse,
   type PageCaptureRecord,
   type SyncCaptureResponse
 } from "~types/capture"
@@ -24,12 +35,22 @@ const SYNC_INTERVAL_MS = 10_000
 const SYNC_BASE_DELAY_MS = 1_000
 const SYNC_MAX_DELAY_MS = 5 * 60_000
 const SYNC_SOURCE_SESSION = "extension-content-script"
+const ACTIVE_TICK_MS = 1_000
+
+let activeThresholdMs = DEFAULT_AUTO_CAPTURE_ACTIVE_MINUTES * 60_000
 
 const pageId = `${window.location.href}::${performance.timeOrigin}`
 let maxScrollPercentage = 0
 let lastSavedScrollPercentage = -1
 let didSaveAtLeastOnce = false
 let isSyncInProgress = false
+
+let cachedPatterns: string[] = [...DEFAULT_BLOCKLIST_PATTERNS]
+let captureEnabled = false
+let activeMs = 0
+let saveIntervalId: number | null = null
+/** True after the first successful local write for this document (`pageId`). Resets on navigation. */
+let documentCommittedCapture = false
 
 const safeNumber = (value: number) => (Number.isFinite(value) ? value : 0)
 
@@ -58,6 +79,47 @@ const getMainBodyText = () => {
     return (document.body?.innerText || "").trim().slice(0, READABLE_TEXT_MAX_LENGTH)
   }
 }
+
+const loadAutoCaptureThresholdMs = () =>
+  new Promise<number>((resolve) => {
+    chrome.storage.local.get([AUTO_CAPTURE_ACTIVE_MINUTES_STORAGE_KEY], (result) => {
+      const raw = result[AUTO_CAPTURE_ACTIVE_MINUTES_STORAGE_KEY]
+      const minutes =
+        typeof raw === "number" && Number.isFinite(raw)
+          ? clamp(
+              Math.round(raw),
+              MIN_AUTO_CAPTURE_ACTIVE_MINUTES,
+              MAX_AUTO_CAPTURE_ACTIVE_MINUTES
+            )
+          : DEFAULT_AUTO_CAPTURE_ACTIVE_MINUTES
+      resolve(minutes * 60_000)
+    })
+  })
+
+const loadBlocklist = () =>
+  new Promise<string[]>((resolve) => {
+    chrome.storage.local.get([BLOCKLIST_STORAGE_KEY], (result) => {
+      const raw = result[BLOCKLIST_STORAGE_KEY] as string[] | undefined
+      if (Array.isArray(raw) && raw.length > 0) {
+        resolve(raw.map((s) => String(s).trim()).filter(Boolean))
+      } else {
+        resolve([...DEFAULT_BLOCKLIST_PATTERNS])
+      }
+    })
+  })
+
+const urlMatchesBlocklist = (url: string, patterns: string[]) => {
+  const u = url.toLowerCase()
+  for (const p of patterns) {
+    const t = String(p).trim().toLowerCase()
+    if (t && u.includes(t)) {
+      return true
+    }
+  }
+  return false
+}
+
+const isCurrentUrlBlocked = () => urlMatchesBlocklist(window.location.href, cachedPatterns)
 
 const readStorage = () =>
   new Promise<PageCaptureRecord[]>((resolve) => {
@@ -103,12 +165,18 @@ const toSyncPayload = (record: PageCaptureRecord): CaptureSyncPayload => ({
 
 const sendCaptureToLocalApi = async (record: PageCaptureRecord) => {
   const response = await new Promise<SyncCaptureResponse>((resolve, reject) => {
+    // Add a timeout so we don't get stuck forever if the background script hangs
+    const timeoutId = setTimeout(() => {
+      reject(new Error("Timeout waiting for background script response"))
+    }, 15000)
+
     chrome.runtime.sendMessage(
       {
         type: SYNC_CAPTURE_MESSAGE_TYPE,
         payload: toSyncPayload(record)
       },
       (result: SyncCaptureResponse | undefined) => {
+        clearTimeout(timeoutId)
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message))
           return
@@ -170,7 +238,8 @@ const flushSyncQueue = async () => {
     const now = Date.now()
     const nextQueue: CaptureSyncQueueItem[] = []
 
-    for (const item of queue) {
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i]
       if (item.nextRetryAt > now) {
         nextQueue.push(item)
         continue
@@ -178,6 +247,7 @@ const flushSyncQueue = async () => {
 
       try {
         await sendCaptureToLocalApi(item.capture)
+        // If successful, we don't push it to nextQueue
       } catch (error) {
         const attempts = item.attempts + 1
         const message = error instanceof Error ? error.message : "Unknown sync error"
@@ -189,7 +259,10 @@ const flushSyncQueue = async () => {
           lastError: message
         })
 
-        // Endpoint is usually shared; stop this flush cycle after first sync failure.
+        // Keep the rest of the queue intact for future flushes
+        for (let j = i + 1; j < queue.length; j++) {
+          nextQueue.push(queue[j])
+        }
         break
       }
     }
@@ -200,10 +273,40 @@ const flushSyncQueue = async () => {
   }
 }
 
-const upsertCapture = async () => {
+const stopPeriodicSave = () => {
+  if (saveIntervalId !== null) {
+    clearInterval(saveIntervalId)
+    saveIntervalId = null
+  }
+}
+
+const startPeriodicSave = () => {
+  if (saveIntervalId !== null || isCurrentUrlBlocked()) {
+    return
+  }
+
+  saveIntervalId = window.setInterval(() => {
+    void upsertCapture()
+  }, SAVE_INTERVAL_MS)
+}
+
+const enableCapturePipeline = () => {
+  if (isCurrentUrlBlocked()) {
+    return
+  }
+
+  captureEnabled = true
+  startPeriodicSave()
+}
+
+const upsertCapture = async (options?: { force?: boolean }) => {
+  if (isCurrentUrlBlocked()) {
+    return
+  }
+
   maxScrollPercentage = Math.max(maxScrollPercentage, getCurrentScrollPercentage())
 
-  if (didSaveAtLeastOnce) {
+  if (!options?.force && didSaveAtLeastOnce) {
     const delta = Math.abs(maxScrollPercentage - lastSavedScrollPercentage)
     if (delta < SCROLL_SAVE_DELTA_PERCENT) {
       return
@@ -234,6 +337,7 @@ const upsertCapture = async () => {
 
   await writeStorage(captures.slice(0, MAX_CAPTURE_HISTORY))
   await enqueueCaptureForSync(record)
+  documentCommittedCapture = true
   await flushSyncQueue()
   lastSavedScrollPercentage = maxScrollPercentage
   didSaveAtLeastOnce = true
@@ -243,15 +347,123 @@ const onScroll = () => {
   maxScrollPercentage = Math.max(maxScrollPercentage, getCurrentScrollPercentage())
 }
 
+const shouldCountActiveEngagement = () =>
+  document.visibilityState === "visible" && document.hasFocus()
+
+const tickActiveEngagement = () => {
+  if (isCurrentUrlBlocked() || captureEnabled) {
+    return
+  }
+
+  if (shouldCountActiveEngagement()) {
+    activeMs += ACTIVE_TICK_MS
+    if (activeMs >= activeThresholdMs) {
+      enableCapturePipeline()
+      void upsertCapture({ force: true })
+    }
+  }
+}
+
+const onBlocklistMaybeChanged = () => {
+  if (isCurrentUrlBlocked()) {
+    stopPeriodicSave()
+  } else if (captureEnabled) {
+    startPeriodicSave()
+  }
+}
+
+const runForcedCapture = async (): Promise<ContentCaptureTriggerResponse> => {
+  if (documentCommittedCapture) {
+    return {
+      ok: false,
+      error: "Already captured in this tab. Reload the page to capture again."
+    }
+  }
+
+  if (isCurrentUrlBlocked()) {
+    return { ok: false, error: "This URL matches your blocklist." }
+  }
+
+  enableCapturePipeline()
+  try {
+    await upsertCapture({ force: true })
+    return { ok: true }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Capture failed"
+    return { ok: false, error: message }
+  }
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!message || typeof message !== "object" || !("type" in message)) {
+    return
+  }
+
+  const type = (message as { type: string }).type
+
+  if (type === CONTENT_GET_DOCUMENT_CAPTURE_STATE) {
+    sendResponse({
+      ok: true,
+      captured: documentCommittedCapture
+    } satisfies DocumentCaptureStateResponse)
+    return
+  }
+
+  if (type === CONTENT_TRIGGER_MANUAL_CAPTURE || type === CONTENT_TRIGGER_BOOKMARK_CAPTURE) {
+    void runForcedCapture().then(sendResponse)
+    return true
+  }
+
+  return
+})
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") {
+    return
+  }
+
+  if (changes[BLOCKLIST_STORAGE_KEY]) {
+    const next = changes[BLOCKLIST_STORAGE_KEY].newValue as string[] | undefined
+    cachedPatterns =
+      Array.isArray(next) && next.length > 0
+        ? next.map((s) => String(s).trim()).filter(Boolean)
+        : [...DEFAULT_BLOCKLIST_PATTERNS]
+
+    onBlocklistMaybeChanged()
+  }
+
+  if (changes[AUTO_CAPTURE_ACTIVE_MINUTES_STORAGE_KEY]) {
+    const newVal = changes[AUTO_CAPTURE_ACTIVE_MINUTES_STORAGE_KEY].newValue
+    const minutes =
+      typeof newVal === "number" && Number.isFinite(newVal)
+        ? clamp(
+            Math.round(newVal),
+            MIN_AUTO_CAPTURE_ACTIVE_MINUTES,
+            MAX_AUTO_CAPTURE_ACTIVE_MINUTES
+          )
+        : DEFAULT_AUTO_CAPTURE_ACTIVE_MINUTES
+    activeThresholdMs = minutes * 60_000
+
+    if (!captureEnabled && !isCurrentUrlBlocked() && activeMs >= activeThresholdMs) {
+      enableCapturePipeline()
+      void upsertCapture({ force: true })
+    }
+  }
+})
+
 window.addEventListener("scroll", onScroll, { passive: true })
 window.addEventListener("beforeunload", () => {
-  void upsertCapture()
+  if (captureEnabled && !isCurrentUrlBlocked()) {
+    void upsertCapture()
+  }
 })
 window.addEventListener("pagehide", () => {
-  void upsertCapture()
+  if (captureEnabled && !isCurrentUrlBlocked()) {
+    void upsertCapture()
+  }
 })
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") {
+  if (document.visibilityState === "hidden" && captureEnabled && !isCurrentUrlBlocked()) {
     void upsertCapture()
   }
 })
@@ -259,11 +471,16 @@ window.addEventListener("online", () => {
   void flushSyncQueue()
 })
 
-setInterval(() => {
-  void upsertCapture()
-}, SAVE_INTERVAL_MS)
-setInterval(() => {
+window.setInterval(() => {
+  tickActiveEngagement()
+}, ACTIVE_TICK_MS)
+
+window.setInterval(() => {
   void flushSyncQueue()
 }, SYNC_INTERVAL_MS)
 
-void upsertCapture()
+void (async () => {
+  cachedPatterns = await loadBlocklist()
+  activeThresholdMs = await loadAutoCaptureThresholdMs()
+  onBlocklistMaybeChanged()
+})()

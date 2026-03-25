@@ -2,7 +2,7 @@
   "name": "surfrag-extension",
   "displayName": "Surfrag extension",
   "version": "0.0.1",
-  "description": "A simple extension that captures everything the user is viewing.",
+  "description": "Captures pages to SurfRAG after engagement, bookmarks, or manual trigger.",
   "author": "kyhsdjq",
   "scripts": {
     "dev": "plasmo dev",
@@ -26,8 +26,19 @@
   },
   "manifest": {
     "permissions": [
-      "storage"
+      "storage",
+      "bookmarks",
+      "tabs"
     ],
+    "commands": {
+      "capture-page": {
+        "suggested_key": {
+          "default": "Ctrl+Shift+Y",
+          "mac": "Command+Shift+Y"
+        },
+        "description": "Capture the current tab to SurfRAG"
+      }
+    },
     "host_permissions": [
       "<all_urls>"
     ]
