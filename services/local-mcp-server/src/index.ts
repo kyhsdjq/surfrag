@@ -5,7 +5,9 @@ import { mkdirSync } from "node:fs";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 
-import { bootstrapSqlite, upsertCapture } from "./db/sqlite.js";
+import { bootstrapSqlite, getCaptureIdentityState, upsertCapture } from "./db/sqlite.js";
+import { computeContentHash } from "./ingest/hash.js";
+import { canonicalizeCaptureUrl } from "./ingest/url.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
 import { syncCaptureToLightRAG } from "./lightrag/sync.js";
 import { getEmbeddingProvider } from "./embedding/index.js";
@@ -82,7 +84,42 @@ app.get("/health", async () => ({ ok: true }));
 app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
   try {
     const captureRecord = toCaptureRecord(request.body);
-    const insertResult = upsertCapture(db, captureRecord);
+    const canonicalUrl = canonicalizeCaptureUrl(captureRecord.url);
+    const contentHash = computeContentHash(captureRecord.bodyText);
+    const previousCapture = getCaptureIdentityState(db, canonicalUrl);
+
+    if (previousCapture?.contentHash === contentHash) {
+      request.log.info(
+        {
+          decision: "unchanged-skip",
+          canonicalUrl,
+          captureId: previousCapture.id
+        },
+        "Capture unchanged; skipping heavy ingestion"
+      );
+
+      return {
+        ok: true,
+        status: "unchanged",
+        unchanged: true,
+        id: previousCapture.id,
+        canonicalUrl
+      };
+    }
+
+    const insertResult = upsertCapture(db, {
+      capture: captureRecord,
+      canonicalUrl,
+      contentHash
+    });
+    request.log.info(
+      {
+        decision: previousCapture ? "changed" : "new",
+        canonicalUrl,
+        captureId: insertResult.id
+      },
+      "Capture accepted for ingestion"
+    );
 
     // Phase 2.2: embed and upsert vectors (await before reply)
     if (lanceClient) {
@@ -131,6 +168,7 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
     return {
       ok: true,
       status: "persisted",
+      unchanged: false,
       id: insertResult.id,
       changes: insertResult.changes,
       capture: captureRecord

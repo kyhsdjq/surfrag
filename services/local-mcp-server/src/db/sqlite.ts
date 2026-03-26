@@ -13,6 +13,17 @@ export type SqliteBootstrapResult = {
   dbPath: string
 }
 
+export type CaptureIdentityState = {
+  id: string
+  contentHash: string | null
+}
+
+export type UpsertCaptureInput = {
+  capture: CaptureRecord
+  canonicalUrl: string
+  contentHash: string
+}
+
 type CaptureRow = {
   id: string
   page_id: string
@@ -85,20 +96,18 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH): SqliteBootstrapRe
     CREATE TABLE IF NOT EXISTS captures (
       id TEXT PRIMARY KEY,
       page_id TEXT NOT NULL,
+      canonical_url TEXT NOT NULL DEFAULT '',
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       referrer TEXT NOT NULL DEFAULT '',
       body_text TEXT NOT NULL,
+      content_hash TEXT,
       max_scroll_percentage REAL NOT NULL,
       captured_at TEXT NOT NULL,
       source_session TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_captures_page_id_unique ON captures(page_id);
-    CREATE INDEX IF NOT EXISTS idx_captures_url ON captures(url);
-    CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);
   `)
 
   const hasPageIdColumn = db
@@ -109,20 +118,91 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH): SqliteBootstrapRe
     db.exec("ALTER TABLE captures ADD COLUMN page_id TEXT NOT NULL DEFAULT '';")
   }
 
+  const hasCanonicalUrlColumn = db
+    .prepare("SELECT 1 AS ok FROM pragma_table_info('captures') WHERE name = 'canonical_url' LIMIT 1;")
+    .get() as { ok: number } | undefined
+
+  if (!hasCanonicalUrlColumn) {
+    db.exec("ALTER TABLE captures ADD COLUMN canonical_url TEXT NOT NULL DEFAULT '';")
+  }
+
+  const hasContentHashColumn = db
+    .prepare("SELECT 1 AS ok FROM pragma_table_info('captures') WHERE name = 'content_hash' LIMIT 1;")
+    .get() as { ok: number } | undefined
+
+  if (!hasContentHashColumn) {
+    db.exec("ALTER TABLE captures ADD COLUMN content_hash TEXT;")
+  }
+
   db.exec("UPDATE captures SET page_id = id WHERE page_id = '';")
+  db.exec("UPDATE captures SET canonical_url = url WHERE canonical_url = '';")
+  db.exec("DROP INDEX IF EXISTS idx_captures_page_id_unique;")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_captures_canonical_url ON captures(canonical_url);")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_captures_url ON captures(url);")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);")
 
   return { db, dbPath: resolvedDbPath }
 }
 
-export const upsertCapture = (db: Database.Database, capture: CaptureRecord) => {
-  const statement = db.prepare(`
+export const getCaptureIdentityState = (
+  db: Database.Database,
+  canonicalUrl: string
+): CaptureIdentityState | null => {
+  const row = db
+    .prepare(
+      `
+      SELECT id, content_hash
+      FROM captures
+      WHERE canonical_url = @canonical_url
+      ORDER BY updated_at DESC
+      LIMIT 1;
+    `
+    )
+    .get({ canonical_url: canonicalUrl }) as
+    | { id: string; content_hash: string | null }
+    | undefined
+
+  if (!row) {
+    return null
+  }
+
+  return {
+    id: row.id,
+    contentHash: row.content_hash
+  }
+}
+
+export const upsertCapture = (db: Database.Database, input: UpsertCaptureInput) => {
+  const { capture, canonicalUrl, contentHash } = input
+  const findExisting = db.prepare(
+    "SELECT id FROM captures WHERE canonical_url = @canonical_url ORDER BY updated_at DESC LIMIT 1;"
+  )
+  const updateExisting = db.prepare(`
+    UPDATE captures
+    SET
+      page_id = @page_id,
+      canonical_url = @canonical_url,
+      title = @title,
+      url = @url,
+      referrer = @referrer,
+      body_text = @body_text,
+      content_hash = @content_hash,
+      max_scroll_percentage = @max_scroll_percentage,
+      captured_at = @captured_at,
+      source_session = @source_session,
+      updated_at = @updated_at
+    WHERE id = @id;
+  `)
+  const insertNew = db.prepare(`
     INSERT INTO captures (
       id,
       page_id,
+      canonical_url,
       title,
       url,
       referrer,
       body_text,
+      content_hash,
       max_scroll_percentage,
       captured_at,
       source_session,
@@ -131,49 +211,70 @@ export const upsertCapture = (db: Database.Database, capture: CaptureRecord) => 
     ) VALUES (
       @id,
       @page_id,
+      @canonical_url,
       @title,
       @url,
       @referrer,
       @body_text,
+      @content_hash,
       @max_scroll_percentage,
       @captured_at,
       @source_session,
       @created_at,
       @updated_at
-    )
-    ON CONFLICT(page_id) DO UPDATE SET
-      title = excluded.title,
-      url = excluded.url,
-      referrer = excluded.referrer,
-      body_text = excluded.body_text,
-      max_scroll_percentage = excluded.max_scroll_percentage,
-      captured_at = excluded.captured_at,
-      source_session = excluded.source_session,
-      updated_at = excluded.updated_at;
+    );
   `)
 
-  const result = statement.run({
-    id: capture.id,
-    page_id: capture.pageId,
-    title: capture.title,
-    url: capture.url,
-    referrer: capture.referrer,
-    body_text: capture.bodyText,
-    max_scroll_percentage: capture.maxScrollPercentage,
-    captured_at: capture.capturedAt,
-    source_session: capture.sourceSession,
-    created_at: capture.createdAt,
-    updated_at: capture.updatedAt
+  const operation = db.transaction(() => {
+    const existing = findExisting.get({ canonical_url: canonicalUrl }) as
+      | { id: string }
+      | undefined
+
+    if (existing) {
+      const result = updateExisting.run({
+        id: existing.id,
+        page_id: capture.pageId,
+        canonical_url: canonicalUrl,
+        title: capture.title,
+        url: capture.url,
+        referrer: capture.referrer,
+        body_text: capture.bodyText,
+        content_hash: contentHash,
+        max_scroll_percentage: capture.maxScrollPercentage,
+        captured_at: capture.capturedAt,
+        source_session: capture.sourceSession,
+        updated_at: capture.updatedAt
+      })
+
+      return {
+        id: existing.id,
+        changes: result.changes
+      }
+    }
+
+    const result = insertNew.run({
+      id: capture.id,
+      page_id: capture.pageId,
+      canonical_url: canonicalUrl,
+      title: capture.title,
+      url: capture.url,
+      referrer: capture.referrer,
+      body_text: capture.bodyText,
+      content_hash: contentHash,
+      max_scroll_percentage: capture.maxScrollPercentage,
+      captured_at: capture.capturedAt,
+      source_session: capture.sourceSession,
+      created_at: capture.createdAt,
+      updated_at: capture.updatedAt
+    })
+
+    return {
+      id: capture.id,
+      changes: result.changes
+    }
   })
 
-  const persisted = db
-    .prepare("SELECT id FROM captures WHERE page_id = @page_id LIMIT 1;")
-    .get({ page_id: capture.pageId }) as { id: string } | undefined
-
-  return {
-    id: persisted?.id ?? capture.id,
-    changes: result.changes
-  }
+  return operation()
 }
 
 export const searchCaptures = (
