@@ -14,12 +14,12 @@ To solve this, we need a multi-layered filtering system across both the Chrome E
 ## Proposed Solutions
 
 ### 1. Client-Side (Chrome Extension) Filtering
-Instead of automatically posting every single web page we surf, we should restrict the automatic triggers and give the user more control.
+Instead of automatically posting every single web page we surf, we should restrict automatic capture and give the user more control. UI for thresholds, blocklist, and toggles lives on a **Settings** (secondary) screen in the popup; the **main** popup keeps **manual capture** and a short **latest-capture preview** only.
 
-* **Trigger 1: Bookmarks:** Only automatically send pages that the user explicitly bookmarks (`chrome.bookmarks.onCreated`).
-* **Trigger 2: Time-on-Page:** Only send pages where the user has actively spent more than a threshold of time (e.g., > 5 minutes).
-* **Trigger 3: Manual Capture (New Suggestion):** Add a "Capture Page" button to the extension popup or a keyboard shortcut, allowing the user to explicitly say "this is useful."
-* **Trigger 4: Domain Blocklist (New Suggestion):** Maintain a customizable list of domains/URL patterns to always ignore (e.g., `google.com/search`, `mail.google.com`, `localhost`).
+* **Trigger 1: Bookmarks:** Capture when the user adds a bookmark (`chrome.bookmarks.onCreated` only—no scan of existing bookmarks on install). A **“Capture when bookmarking”** toggle in **Settings** (default **on**, `chrome.storage.local`) must be on before the background script messages the tab.
+* **Trigger 2: Active time (configurable):** Track cumulative **active** time only when the tab is **visible** and the document **has focus**; pause when the tab is hidden or unfocused. After threshold minutes (key `surfrag:auto-capture-active-minutes`, default **5**, clamped e.g. **1–120**, user-editable under **Settings**), trigger capture. Open tabs pick up changes via `chrome.storage.onChanged` without reload.
+* **Trigger 3: Manual capture:** A **Capture Page** button on the main popup and/or a manifest keyboard shortcut. **Deduplication:** For a stable `pageId` per document visit (`location.href` + `performance.timeOrigin`), the first successful local write sets a **committed** flag; further **manual** or **bookmark** triggers in the same visit are rejected with a clear error (auto-capture and periodic pipeline updates behave as designed). The popup reflects whether this document is already captured where possible.
+* **Trigger 4: Domain blocklist:** Configurable URL/domain patterns (e.g., `google.com/search`, `localhost`) in **Settings**, stored in `chrome.storage` (`sync` or `local`). Check before starting the time tracker or allowing manual/bookmark capture.
 
 ### 2. Server-Side (MCP Server) Change Detection
 If a web page has already been recorded, we should not waste time and tokens re-processing it if the content hasn't changed.
@@ -27,32 +27,21 @@ If a web page has already been recorded, we should not waste time and tokens re-
 * **Content Hashing:** Generate a hash (e.g., SHA-256) of the `bodyText` when a page is received. 
 * **Diff Check:** Compare the incoming hash with the stored hash in SQLite. If it hasn't changed, skip the LightRAG and LanceDB ingestion pipelines entirely.
 
-### 3. Server-Side (MCP Server) Content Evaluation
-Even if a page is sent to the server, it might just be a long navigation page or a privacy policy. We can evaluate its usefulness before heavy processing.
-
-* **Heuristic Pre-filtering (New Suggestion):** Before invoking an LLM, apply fast rules. For example, if the page has fewer than 100 words, or if the ratio of links to text is extremely high (indicating a navigation hub), drop it.
-* **LLM Usefulness Check:** Use a fast/cheap LLM (e.g., GLM-4-flash or GPT-4o-mini) to evaluate the page content.
-  * **Prompt:** Ask the LLM, "Is this web page an article, documentation, or meaningful content worth saving to a knowledge base, or is it just a navigation/useless page?"
-  * **Action if Useful:** Proceed to save in all configured datasets (SQLite, LanceDB, LightRAG).
-  * **Action if Useless:** Save the metadata in SQLite only, and mark it with a flag (e.g., `is_useful: false`). This prevents the system from repeatedly evaluating the same useless page if the user visits it again.
-
 ---
 
 ## Implementation Plan (Draft)
 
 ### Phase 4.1: Extension Triggers & Blocklists
-- Update the Chrome extension's background/content scripts.
-- Implement the 5-minute active time tracker.
-- Implement the bookmark listener.
-- Add a manual capture button in the UI.
+(See [`phase4-1/phase4-1.md`](phase4-1/phase4-1.md) for full specs and Q&A.)
+
+- **Manifest:** Permissions as needed (`bookmarks`, `storage`, etc.).
+- **Settings popup:** Blocklist, API URL, bookmark-capture toggle, auto-capture minutes, sync-queue controls—synced with Chrome storage; **main** popup stays manual capture + latest-capture preview.
+- **Content script:** Active-time tracking (visibility + focus, one-second ticks, in-memory timer resets on full navigation/reload); trigger capture from threshold and manual messages; honor blocklist; `pageId` + committed dedup for manual/bookmark; react to storage changes for the minutes threshold.
+- **Background:** `chrome.bookmarks.onCreated` (respect bookmark toggle); route manual capture from popup/shortcut to the content script.
+- **Testing:** Triggers and blocklist behave as specified; no duplicate manual/bookmark enqueue for the same visit after commit.
 
 ### Phase 4.2: Server-Side Change Detection
 - Update the SQLite `captures` table schema to include a `content_hash` column.
 - Update `POST /captures` to compute the hash and check for existing records.
 - Early return `200 OK (Unchanged)` if the hash matches.
 
-### Phase 4.3: Server-Side LLM Evaluation & Heuristics
-- Add basic heuristic checks (word count, etc.) in the `POST /captures` route.
-- Integrate an LLM call to evaluate usefulness.
-- Update the SQLite schema to include an `is_useful` boolean flag.
-- Gate the LanceDB and LightRAG syncs behind the `is_useful === true` condition.

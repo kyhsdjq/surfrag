@@ -4,6 +4,8 @@ A local-first web knowledge Q&A system powered by LightRAG and MCP. Syncs your b
 
 ## Project Architecture
 
+### Dataflow
+
 ```mermaid
 flowchart LR
     subgraph Ingest["Ingestion"]
@@ -36,6 +38,77 @@ flowchart LR
     SQLITE --> T1 & T4
     LR --> T2
     LANCEDB --> T3
+```
+
+### Framework
+
+```mermaid
+flowchart LR
+    subgraph EXTENSION["Extension (Chrome)"]
+        EXT_UI["Capture pages\nConfigure API URL"]
+    end
+
+    subgraph SURFRAG["SurfRAG Server (Node/MCP)"]
+        API["POST /captures"]
+        MCP["MCP tools\nsearch_captures\nvector_search\nlightrag_query"]
+        SQLITE["SQLite metadata"]
+        LANCEDB["LanceDB vectors (optional)"]
+    end
+
+    subgraph LIGHTRAG["LightRAG Server (Python API)"]
+        LR_INSERT["/insert"]
+        LR_QUERY["/query"]
+        LR_STORE["Graph + vector store"]
+    end
+
+    EXT_UI -->|"sync captures"| API
+    API -->|"store metadata"| SQLITE
+    API -.->|"optional vector ingest"| LANCEDB
+    API -->|"default ingest"| LR_INSERT
+    LR_INSERT --> LR_STORE
+
+    MCP -->|"graph RAG query"| LR_QUERY
+    LR_QUERY --> LR_STORE
+
+    EXT_UI -.->|"same base URL as SurfRAG"| API
+```
+
+### Future Framework
+
+```mermaid
+flowchart LR
+    subgraph EXTENSION["Extension (Chrome)"]
+        EXT_UI["Capture pages\nConfigure API URL"]
+        CLEANER["Cleaner\n(HTML cleanup)"]
+    end
+
+    subgraph SURFRAG["SurfRAG Server (Node/MCP)"]
+        API["POST /captures"]
+        EVALUATOR["Evaluator\n(judge page usefulness)"]
+        MCP["MCP tools\nsearch_captures\nvector_search\nlightrag_query"]
+        SQLITE["SQLite metadata"]
+        LANCEDB["LanceDB vectors (optional)"]
+    end
+
+    subgraph LIGHTRAG["LightRAG Server (Python API)"]
+        LR_INSERT["/insert"]
+        LR_QUERY["/query"]
+        LR_STORE["Graph + vector store"]
+    end
+
+    EXT_UI --> CLEANER
+    CLEANER -->|"sync cleaned captures"| API
+
+    API --> EVALUATOR
+    EVALUATOR -->|"useful page"| SQLITE
+    EVALUATOR -.->|"useful page (optional vector ingest)"| LANCEDB
+    EVALUATOR -->|"useful page (default ingest)"| LR_INSERT
+    LR_INSERT --> LR_STORE
+
+    MCP -->|"graph RAG query"| LR_QUERY
+    LR_QUERY --> LR_STORE
+
+    EXT_UI -.->|"same base URL as SurfRAG"| API
 ```
 
 ## Requirements
