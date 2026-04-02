@@ -16,6 +16,7 @@ export type SqliteBootstrapResult = {
 export type CaptureIdentityState = {
   id: string
   contentHash: string | null
+  url: string
 }
 
 export type UpsertCaptureInput = {
@@ -151,7 +152,7 @@ export const getCaptureIdentityState = (
   const row = db
     .prepare(
       `
-      SELECT id, content_hash
+      SELECT id, content_hash, url
       FROM captures
       WHERE canonical_url = @canonical_url
       ORDER BY updated_at DESC
@@ -159,7 +160,7 @@ export const getCaptureIdentityState = (
     `
     )
     .get({ canonical_url: canonicalUrl }) as
-    | { id: string; content_hash: string | null }
+    | { id: string; content_hash: string | null; url: string }
     | undefined
 
   if (!row) {
@@ -168,7 +169,8 @@ export const getCaptureIdentityState = (
 
   return {
     id: row.id,
-    contentHash: row.content_hash
+    contentHash: row.content_hash,
+    url: row.url
   }
 }
 

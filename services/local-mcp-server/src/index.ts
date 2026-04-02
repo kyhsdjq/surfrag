@@ -155,11 +155,34 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
 
     // Phase 3.3: sync to LightRAG (fire-and-forget)
     if (lightragInsertEnabled && lightragUrl) {
+      const lightragSyncMode = previousCapture ? "insert-or-replace" : "insert";
+      const lightragFileSource = canonicalUrl;
+      const lightragLookupFileSources = [
+        canonicalUrl,
+        previousCapture?.url,
+        captureRecord.url
+      ].filter((value): value is string => Boolean(value?.trim()));
+
+      request.log.info(
+        {
+          captureId: insertResult.id,
+          canonicalUrl,
+          mode: lightragSyncMode,
+          fileSource: lightragFileSource
+        },
+        "Queueing LightRAG capture sync"
+      );
+
       void syncCaptureToLightRAG(
         captureRecord,
         lightragUrl,
         lightragApiKey,
-        request.log
+        request.log,
+        {
+          mode: lightragSyncMode,
+          fileSource: lightragFileSource,
+          lookupFileSources: lightragLookupFileSources
+        }
       );
     }
 
