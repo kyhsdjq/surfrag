@@ -9,7 +9,10 @@ import { bootstrapSqlite, getCaptureIdentityState, upsertCapture } from "./db/sq
 import { computeContentHash } from "./ingest/hash.js";
 import { canonicalizeCaptureUrl } from "./ingest/url.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
-import { syncCaptureToLightRAG } from "./lightrag/sync.js";
+import {
+  syncCaptureToLightRAG,
+  type LightRAGSyncMode
+} from "./lightrag/sync.js";
 import { getEmbeddingProvider } from "./embedding/index.js";
 import { getChunkingStrategy } from "./chunking/index.js";
 import { canBootstrapVectorIndexing, isVectorDbEnabled } from "./vector/bootstrap.js";
@@ -31,6 +34,18 @@ const lightragInsertEnabled =
     : parseBoolEnv(process.env.LIGHTRAG_INSERT_ENABLED);
 const lightragUrl = process.env.LIGHTRAG_URL?.trim() || DEFAULT_LIGHTRAG_URL;
 const lightragApiKey = process.env.LIGHTRAG_API_KEY?.trim() || null;
+
+type LightRAGSyncSummary =
+  | {
+      attempted: false;
+      reason: "unchanged" | "disabled";
+    }
+  | {
+      attempted: true;
+      mode: LightRAGSyncMode;
+      fileSource: string;
+      lookupFileSources: string[];
+    };
 
 const app = Fastify({ logger: true });
 const { db, dbPath } = bootstrapSqlite();
@@ -87,6 +102,25 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
     const canonicalUrl = canonicalizeCaptureUrl(captureRecord.url);
     const contentHash = computeContentHash(captureRecord.bodyText);
     const previousCapture = getCaptureIdentityState(db, canonicalUrl);
+    const lightragSyncMode: LightRAGSyncMode = previousCapture ? "overwrite-add" : "insert";
+    const lightragFileSource = canonicalUrl;
+    const lightragLookupFileSources = [
+      canonicalUrl,
+      previousCapture?.url,
+      captureRecord.url
+    ].filter((value): value is string => Boolean(value?.trim()));
+    const lightragSyncSummary: LightRAGSyncSummary =
+      lightragInsertEnabled && lightragUrl
+        ? {
+            attempted: true,
+            mode: lightragSyncMode,
+            fileSource: lightragFileSource,
+            lookupFileSources: lightragLookupFileSources
+          }
+        : {
+            attempted: false,
+            reason: "disabled"
+          };
 
     if (previousCapture?.contentHash === contentHash) {
       request.log.info(
@@ -103,7 +137,11 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
         status: "unchanged",
         unchanged: true,
         id: previousCapture.id,
-        canonicalUrl
+        canonicalUrl,
+        lightRagSync: {
+          attempted: false,
+          reason: "unchanged"
+        } satisfies LightRAGSyncSummary
       };
     }
 
@@ -155,14 +193,6 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
 
     // Phase 3.3: sync to LightRAG (fire-and-forget)
     if (lightragInsertEnabled && lightragUrl) {
-      const lightragSyncMode = previousCapture ? "insert-or-replace" : "insert";
-      const lightragFileSource = canonicalUrl;
-      const lightragLookupFileSources = [
-        canonicalUrl,
-        previousCapture?.url,
-        captureRecord.url
-      ].filter((value): value is string => Boolean(value?.trim()));
-
       request.log.info(
         {
           captureId: insertResult.id,
@@ -194,7 +224,8 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
       unchanged: false,
       id: insertResult.id,
       changes: insertResult.changes,
-      capture: captureRecord
+      capture: captureRecord,
+      lightRagSync: lightragSyncSummary
     };
   } catch (error) {
     if (error instanceof ZodError) {

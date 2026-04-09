@@ -30,6 +30,11 @@ type LightRAGDeleteResponse = {
   doc_id?: string
 }
 
+export type LightRAGClearDocumentsResponse = {
+  status?: string
+  message?: string
+}
+
 export type LightRAGLogger = {
   info?: (obj: unknown, msg?: string) => void
   warn?: (obj: unknown, msg?: string) => void
@@ -90,6 +95,35 @@ async function fetchDocumentPage(
   return (await readJson<LightRAGPaginatedResponse>(response)) ?? {}
 }
 
+export async function listLightRAGDocuments(
+  baseUrl: string,
+  apiKey?: string | null
+): Promise<LightRAGDocumentSummary[]> {
+  const summaries: LightRAGDocumentSummary[] = []
+  let page = 1
+
+  while (true) {
+    const payload = await fetchDocumentPage(page, baseUrl, apiKey)
+    const documents = payload.documents ?? []
+
+    summaries.push(
+      ...documents.map((document) => ({
+        id: document.id,
+        filePath: document.file_path,
+        status: document.status,
+        trackId: document.track_id ?? null
+      }))
+    )
+
+    const totalPages = payload.pagination?.total_pages ?? page
+    if (page >= totalPages) {
+      return summaries
+    }
+
+    page += 1
+  }
+}
+
 export async function findLightRAGDocumentByFileSource(
   fileSource: string,
   baseUrl: string,
@@ -147,6 +181,27 @@ export async function deleteLightRAGDocument(
   return payload ?? {}
 }
 
+export async function clearAllLightRAGDocuments(
+  baseUrl: string,
+  apiKey?: string | null
+): Promise<LightRAGClearDocumentsResponse> {
+  const response = await fetch(`${baseUrl}/documents`, {
+    method: "DELETE",
+    headers: buildHeaders(apiKey)
+  })
+
+  const payload = await readJson<LightRAGClearDocumentsResponse>(response)
+
+  if (!response.ok) {
+    const fallback = payload ? JSON.stringify(payload) : ""
+    throw new Error(
+      `LightRAG document reset failed (${response.status}): ${(fallback || response.statusText).slice(0, 300)}`
+    )
+  }
+
+  return payload ?? {}
+}
+
 export async function waitForLightRAGDocumentRemoval(
   fileSource: string,
   baseUrl: string,
@@ -173,6 +228,34 @@ export async function waitForLightRAGDocumentRemoval(
         elapsedMs: Date.now() - startedAt
       },
       "Waiting for LightRAG document deletion to finish"
+    )
+
+    await sleep(LIGHTRAG_DELETE_POLL_MS)
+  }
+
+  return false
+}
+
+export async function waitForLightRAGDocumentsCleared(
+  baseUrl: string,
+  apiKey?: string | null,
+  log?: LightRAGLogger
+): Promise<boolean> {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < LIGHTRAG_DELETE_TIMEOUT_MS) {
+    const documents = await listLightRAGDocuments(baseUrl, apiKey)
+
+    if (documents.length === 0) {
+      return true
+    }
+
+    log?.info?.(
+      {
+        remainingDocuments: documents.length,
+        elapsedMs: Date.now() - startedAt
+      },
+      "Waiting for LightRAG document reset to finish"
     )
 
     await sleep(LIGHTRAG_DELETE_POLL_MS)

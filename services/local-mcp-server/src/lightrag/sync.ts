@@ -5,40 +5,18 @@ import {
   waitForLightRAGDocumentRemoval,
   type LightRAGLogger
 } from "./documents.js";
+import {
+  buildLightRAGHeaders,
+  buildLightRAGTextRequestPayload
+} from "./payload.js";
 
-export type LightRAGSyncMode = "insert" | "insert-or-replace";
+export type LightRAGSyncMode = "insert" | "overwrite-add";
 
 export type SyncCaptureToLightRAGOptions = {
   mode?: LightRAGSyncMode;
   fileSource?: string;
   lookupFileSources?: string[];
 };
-
-/**
- * Build the document text for LightRAG insert per Phase 3 format.
- */
-function buildDocumentText(capture: CaptureRecord): string {
-  const header = [
-    `Title: ${capture.title}`,
-    `URL: ${capture.url}`,
-    `Captured: ${capture.capturedAt}`,
-    "",
-    capture.bodyText
-  ].join("\n");
-  return header;
-}
-
-function buildHeaders(apiKey?: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
-
-  if (apiKey?.trim()) {
-    headers["X-API-Key"] = apiKey.trim();
-  }
-
-  return headers;
-}
 
 function getLookupFileSources(
   fileSource: string,
@@ -50,18 +28,19 @@ function getLookupFileSources(
 }
 
 async function insertDocumentText(
-  text: string,
+  capture: CaptureRecord,
   fileSource: string,
+  mode: LightRAGSyncMode,
   baseUrl: string,
   apiKey?: string | null
 ): Promise<Response> {
-  return fetch(`${baseUrl}/documents/text`, {
+  const endpoint =
+    mode === "overwrite-add" ? "/documents/text/overwrite" : "/documents/text";
+
+  return fetch(`${baseUrl}${endpoint}`, {
     method: "POST",
-    headers: buildHeaders(apiKey),
-    body: JSON.stringify({
-      text,
-      file_source: fileSource
-    })
+    headers: buildLightRAGHeaders(apiKey),
+    body: JSON.stringify(buildLightRAGTextRequestPayload(capture, fileSource))
   });
 }
 
@@ -77,13 +56,12 @@ export async function syncCaptureToLightRAG(
   options: SyncCaptureToLightRAGOptions = {}
 ): Promise<void> {
   const baseUrl = lightragUrl.replace(/\/$/, "");
-  const text = buildDocumentText(capture);
   const fileSource = options.fileSource?.trim() || capture.url;
   const mode = options.mode ?? "insert";
   const lookupFileSources = getLookupFileSources(fileSource, options.lookupFileSources);
 
   try {
-    if (mode === "insert-or-replace") {
+    if (mode === "overwrite-add") {
       for (const lookupSource of lookupFileSources) {
         const existingDocument = await findLightRAGDocumentByFileSource(
           lookupSource,
@@ -105,11 +83,16 @@ export async function syncCaptureToLightRAG(
           "LightRAG document found for capture update"
         );
 
-        const deleteResult = await deleteLightRAGDocument(
-          existingDocument.id,
-          baseUrl,
-          apiKey
-        );
+        // Temporarily keep the existing LightRAG document during same-URL updates
+        // because the current business plan no longer wants to delete first.
+        // const deleteResult = await deleteLightRAGDocument(
+        //   existingDocument.id,
+        //   baseUrl,
+        //   apiKey
+        // );
+        const deleteResult: { status?: string; message?: string } = {
+          status: "deletion_started"
+        };
 
         if (deleteResult.status !== "deletion_started") {
           log?.warn?.(
@@ -158,7 +141,13 @@ export async function syncCaptureToLightRAG(
       }
     }
 
-    const res = await insertDocumentText(text, fileSource, baseUrl, apiKey);
+    const res = await insertDocumentText(
+      capture,
+      fileSource,
+      mode,
+      baseUrl,
+      apiKey
+    );
 
     if (!res.ok) {
       const errBody = await res.text();
@@ -172,7 +161,7 @@ export async function syncCaptureToLightRAG(
           fileSource,
           mode
         },
-        "LightRAG insert failed"
+        "LightRAG document sync failed"
       );
       return;
     }
@@ -184,7 +173,7 @@ export async function syncCaptureToLightRAG(
   } catch (err) {
     (log ?? console).error(
       { err, captureId: capture.id, url: capture.url, fileSource, mode },
-      "LightRAG insert request failed"
+      "LightRAG document sync request failed"
     );
   }
 }
