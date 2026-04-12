@@ -24,7 +24,7 @@ export class GLMEmbeddingProvider implements EmbeddingProvider {
   constructor(config: GLMEmbeddingConfig) {
     const key = config.apiKey?.trim()
     if (!key) {
-      throw new Error("GLMEmbeddingProvider requires apiKey (API_KEY or ZHIPU_API_KEY)")
+      throw new Error("GLMEmbeddingProvider requires apiKey (EMBED_API)")
     }
     this.apiKey = key
     this.model = config.model ?? "embedding-2"

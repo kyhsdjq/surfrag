@@ -5,7 +5,17 @@ import { mkdirSync } from "node:fs";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 
-import { bootstrapSqlite, getCaptureIdentityState, upsertCapture } from "./db/sqlite.js";
+import {
+  bootstrapSqlite,
+  getCaptureIdentityState,
+  toContradictionReviewRow,
+  upsertCapture,
+  upsertContradictionReview
+} from "./db/sqlite.js";
+import {
+  evaluateCaptureForContradictions,
+  type ContradictionClassification
+} from "./contradiction/review.js";
 import { computeContentHash } from "./ingest/hash.js";
 import { canonicalizeCaptureUrl } from "./ingest/url.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
@@ -13,6 +23,7 @@ import {
   syncCaptureToLightRAG,
   type LightRAGSyncMode
 } from "./lightrag/sync.js";
+import { removeLightRAGDocumentsByFileSources } from "./lightrag/documents.js";
 import { getEmbeddingProvider } from "./embedding/index.js";
 import { getChunkingStrategy } from "./chunking/index.js";
 import { canBootstrapVectorIndexing, isVectorDbEnabled } from "./vector/bootstrap.js";
@@ -35,17 +46,22 @@ const lightragInsertEnabled =
 const lightragUrl = process.env.LIGHTRAG_URL?.trim() || DEFAULT_LIGHTRAG_URL;
 const lightragApiKey = process.env.LIGHTRAG_API_KEY?.trim() || null;
 
-type LightRAGSyncSummary =
-  | {
-      attempted: false;
-      reason: "unchanged" | "disabled";
-    }
-  | {
-      attempted: true;
-      mode: LightRAGSyncMode;
-      fileSource: string;
-      lookupFileSources: string[];
-    };
+type LightRAGSyncSummary = {
+  attempted: boolean;
+  reason?: "unchanged" | "disabled" | "blocked_by_contradiction_review";
+  mode?: LightRAGSyncMode;
+  fileSource?: string;
+  lookupFileSources?: string[];
+};
+
+type ContradictionReviewSummary = {
+  classification: ContradictionClassification;
+  blocked: boolean;
+  summaryReason: string;
+  disputedClaims: string[];
+  reviewUrl: string;
+  enteredDebate: boolean;
+};
 
 const app = Fastify({ logger: true });
 const { db, dbPath } = bootstrapSqlite();
@@ -82,7 +98,7 @@ if (canBootstrapVectorIndexing()) {
 } else {
   const reason = !isVectorDbEnabled()
     ? "VECTOR_DB_ENABLED=false (LightRAG is primary)"
-    : "missing API_KEY";
+    : "missing EMBED_API";
   app.log.info(
     { reason },
     "Vector indexing disabled"
@@ -102,14 +118,14 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
     const canonicalUrl = canonicalizeCaptureUrl(captureRecord.url);
     const contentHash = computeContentHash(captureRecord.bodyText);
     const previousCapture = getCaptureIdentityState(db, canonicalUrl);
-    const lightragSyncMode: LightRAGSyncMode = previousCapture ? "overwrite-add" : "insert";
+    const lightragSyncMode: LightRAGSyncMode = "insert";
     const lightragFileSource = canonicalUrl;
     const lightragLookupFileSources = [
       canonicalUrl,
       previousCapture?.url,
       captureRecord.url
     ].filter((value): value is string => Boolean(value?.trim()));
-    const lightragSyncSummary: LightRAGSyncSummary =
+    let lightragSyncSummary: LightRAGSyncSummary =
       lightragInsertEnabled && lightragUrl
         ? {
             attempted: true,
@@ -121,6 +137,7 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
             attempted: false,
             reason: "disabled"
           };
+    let contradictionReviewSummary: ContradictionReviewSummary | null = null;
 
     if (previousCapture?.contentHash === contentHash) {
       request.log.info(
@@ -191,29 +208,99 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
       }
     }
 
-    // Phase 3.3: sync to LightRAG (fire-and-forget)
-    if (lightragInsertEnabled && lightragUrl) {
+    // For same-URL updates, remove the old LightRAG document before contradiction review
+    // so the new version is not guaranteed to contradict its own prior snapshot.
+    if (previousCapture && lightragInsertEnabled && lightragUrl) {
       request.log.info(
         {
           captureId: insertResult.id,
           canonicalUrl,
-          mode: lightragSyncMode,
-          fileSource: lightragFileSource
+          lookupFileSources: lightragLookupFileSources
         },
-        "Queueing LightRAG capture sync"
+        "Removing prior LightRAG documents before contradiction review"
       );
 
-      void syncCaptureToLightRAG(
-        captureRecord,
+      const removed = await removeLightRAGDocumentsByFileSources(
+        lightragLookupFileSources,
         lightragUrl,
         lightragApiKey,
-        request.log,
-        {
+        request.log
+      );
+
+      if (!removed) {
+        reply.code(500);
+        return {
+          ok: false,
+          status: "lightrag_prepare_failed",
+          id: insertResult.id,
+          message: "Capture persisted but prior LightRAG document removal failed"
+        };
+      }
+    }
+
+    // Phase 5.3: contradiction gate before LightRAG sync.
+    if (lightragInsertEnabled && lightragUrl) {
+      const contradictionReview = await evaluateCaptureForContradictions({
+        capture: captureRecord,
+        reviewUrl: canonicalUrl,
+        fileSource: lightragFileSource,
+        baseUrl: lightragUrl,
+        apiKey: lightragApiKey
+      });
+
+      upsertContradictionReview(db, toContradictionReviewRow(contradictionReview));
+
+      contradictionReviewSummary = {
+        classification: contradictionReview.result.classification,
+        blocked: contradictionReview.blocked,
+        summaryReason: contradictionReview.result.summary_reason,
+        disputedClaims: contradictionReview.disputedClaims.map((claim) => claim.claim_text),
+        reviewUrl: contradictionReview.reviewUrl,
+        enteredDebate: contradictionReview.enteredDebate
+      };
+
+      if (contradictionReview.blocked) {
+        lightragSyncSummary = {
+          attempted: false,
+          reason: "blocked_by_contradiction_review",
           mode: lightragSyncMode,
           fileSource: lightragFileSource,
           lookupFileSources: lightragLookupFileSources
-        }
-      );
+        };
+
+        request.log.warn(
+          {
+            captureId: insertResult.id,
+            canonicalUrl,
+            classification: contradictionReview.result.classification,
+            disputedClaims: contradictionReviewSummary.disputedClaims
+          },
+          "Capture blocked by contradiction review before LightRAG sync"
+        );
+      } else {
+        request.log.info(
+          {
+            captureId: insertResult.id,
+            canonicalUrl,
+            mode: lightragSyncMode,
+            fileSource: lightragFileSource,
+            classification: contradictionReview.result.classification
+          },
+          "Queueing LightRAG capture sync"
+        );
+
+        void syncCaptureToLightRAG(
+          captureRecord,
+          lightragUrl,
+          lightragApiKey,
+          request.log,
+          {
+            mode: lightragSyncMode,
+            fileSource: lightragFileSource,
+            lookupFileSources: lightragLookupFileSources
+          }
+        );
+      }
     }
 
     reply.code(201);
@@ -225,7 +312,8 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
       id: insertResult.id,
       changes: insertResult.changes,
       capture: captureRecord,
-      lightRagSync: lightragSyncSummary
+      lightRagSync: lightragSyncSummary,
+      contradictionReview: contradictionReviewSummary
     };
   } catch (error) {
     if (error instanceof ZodError) {

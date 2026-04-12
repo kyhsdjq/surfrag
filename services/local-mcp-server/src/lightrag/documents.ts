@@ -263,3 +263,74 @@ export async function waitForLightRAGDocumentsCleared(
 
   return false
 }
+
+export async function removeLightRAGDocumentsByFileSources(
+  fileSources: string[],
+  baseUrl: string,
+  apiKey?: string | null,
+  log?: LightRAGLogger
+): Promise<boolean> {
+  const uniqueSources = [...new Set(fileSources.map((value) => value.trim()))].filter(
+    (value) => value.length > 0
+  )
+
+  for (const fileSource of uniqueSources) {
+    const existingDocument = await findLightRAGDocumentByFileSource(
+      fileSource,
+      baseUrl,
+      apiKey
+    )
+
+    if (!existingDocument) {
+      continue
+    }
+
+    log?.info?.(
+      {
+        fileSource,
+        docId: existingDocument.id,
+        status: existingDocument.status
+      },
+      "Removing existing LightRAG document before re-ingestion"
+    )
+
+    const deleteResult = await deleteLightRAGDocument(
+      existingDocument.id,
+      baseUrl,
+      apiKey
+    )
+
+    if (deleteResult.status !== "deletion_started") {
+      log?.warn?.(
+        {
+          fileSource,
+          docId: existingDocument.id,
+          deleteStatus: deleteResult.status,
+          message: deleteResult.message
+        },
+        "LightRAG document deletion could not be started"
+      )
+      return false
+    }
+
+    const removed = await waitForLightRAGDocumentRemoval(
+      fileSource,
+      baseUrl,
+      apiKey,
+      log
+    )
+
+    if (!removed) {
+      log?.error(
+        {
+          fileSource,
+          docId: existingDocument.id
+        },
+        "Timed out waiting for LightRAG document deletion"
+      )
+      return false
+    }
+  }
+
+  return true
+}

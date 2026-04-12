@@ -18,10 +18,10 @@ export type VectorBootstrapResult = {
   embedProvider: EmbeddingProvider
 }
 
-/** Whether vector indexing can be bootstrapped (requires VECTOR_DB_ENABLED and API_KEY). */
+/** Whether vector indexing can be bootstrapped (requires VECTOR_DB_ENABLED and EMBED_API). */
 export function canBootstrapVectorIndexing(): boolean {
   if (!isVectorDbEnabled()) return false
-  const apiKey = (process.env.API_KEY ?? process.env.ZHIPU_API_KEY)?.trim()
+  const apiKey = process.env.EMBED_API?.trim()
   return !!apiKey
 }
 
@@ -32,7 +32,7 @@ export type BootstrapOptions = {
 
 /**
  * Bootstrap LanceDB and embedding provider when env is configured.
- * Returns null if VECTOR_DB_ENABLED is false, API_KEY is missing, or bootstrap fails.
+ * Returns null if VECTOR_DB_ENABLED is false, EMBED_API is missing, or bootstrap fails.
  */
 export async function bootstrapVectorIfEnabled(
   options?: BootstrapOptions

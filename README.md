@@ -94,13 +94,16 @@ Create `services/local-mcp-server/.env` from `.env.example` and configure:
 |----------|---------|-------------|
 | `PORT` | `3030` | HTTP server port. Extension must use same base URL. |
 | `DB_PATH` | `./data/surfrag.db` | SQLite database path for capture metadata. |
-| `EMBED_PROVIDER` | `glm` | Embedding provider: `glm`, `openai`, `ollama` |
-| `API_KEY` | — | API key for embedding. GLM: [智谱 AI 开放平台](https://open.bigmodel.cn/) |
+| `EMBED_PROVIDER` | `glm` | Embedding provider. Currently implemented: `glm` |
+| `EMBED_API` | — | API key for embeddings. GLM: [智谱 AI 开放平台](https://open.bigmodel.cn/) |
 | `EMBED_MODEL` | `embedding-2` | Model name (e.g. `embedding-2` for GLM) |
+| `LLM_API_KEY` | — | API key for MCP-side LLM calls such as claim extraction |
+| `LLM_API_PROVIDER` | `glm` | LLM provider for MCP-side structured generation. Currently implemented: `glm` |
+| `LLM_MODEL` | `glm-4-flash` | LLM model used for MCP-side claim extraction |
 | `VECTOR_DB_PATH` | `./data/lancedb` | Directory for LanceDB vector storage |
 | `VECTOR_DB_ENABLED` | `false` | Store captures in LanceDB (vector search). `true` to enable as second choice. |
 | `SEARCH_CAPTURES_ENABLED` | `false` | Show `search_captures` MCP tool (keyword search). Set `true` to enable. |
-| `VECTOR_SEARCH_ENABLED` | `false` | Show `vector_search` MCP tool. Set `true` when using vector search. Requires VECTOR_DB_ENABLED, API_KEY. |
+| `VECTOR_SEARCH_ENABLED` | `false` | Show `vector_search` MCP tool. Set `true` when using vector search. Requires `VECTOR_DB_ENABLED` and `EMBED_API`. |
 | `LIGHTRAG_INSERT_ENABLED` | `true` | Sync captures to LightRAG (default). Set `false` to disable. |
 | `LIGHTRAG_QUERY_ENABLED` | `true` | Enable `lightrag_query` MCP tool. Set `false` to hide. |
 | `LIGHTRAG_URL` | `http://localhost:9621` | LightRAG API base URL. Start LightRAG server first. |
@@ -108,7 +111,9 @@ Create `services/local-mcp-server/.env` from `.env.example` and configure:
 
 **Default setup (LightRAG):** Start the LightRAG server, then the MCP server. Captures sync to LightRAG by default. Keyword search always available.
 
-**Keyword/vector search (optional):** Set `SEARCH_CAPTURES_ENABLED=true` for keyword search, or `VECTOR_SEARCH_ENABLED=true` + `VECTOR_DB_ENABLED=true` + `API_KEY` for vector search. `get_capture_by_id` is only enabled when either is enabled.
+**Keyword/vector search (optional):** Set `SEARCH_CAPTURES_ENABLED=true` for keyword search, or `VECTOR_SEARCH_ENABLED=true` + `VECTOR_DB_ENABLED=true` + `EMBED_API` for vector search. `get_capture_by_id` is only enabled when either is enabled.
+
+**Claim extraction:** Phase 5.3 now uses an MCP-side LLM call to extract candidate claims before contradiction review. Configure `LLM_API_KEY`, `LLM_API_PROVIDER`, and `LLM_MODEL` for this path.
 
 ### LightRAG (.env)
 
@@ -226,4 +231,4 @@ Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo,
 }
 ```
 
-When Cursor runs MCP, `cwd` may differ. Pass `DB_PATH` as absolute path. `LIGHTRAG_URL` is required for LightRAG (default). Optional: `VECTOR_SEARCH_ENABLED`, `VECTOR_DB_PATH`, `VECTOR_DB_ENABLED`, `API_KEY` for vector search. Start LightRAG server before the MCP server.
+When Cursor runs MCP, `cwd` may differ. Pass `DB_PATH` as absolute path. `LIGHTRAG_URL` is required for LightRAG (default). Optional: `VECTOR_SEARCH_ENABLED`, `VECTOR_DB_PATH`, `VECTOR_DB_ENABLED`, and `EMBED_API` for vector search. Start LightRAG server before the MCP server.

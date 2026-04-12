@@ -8,8 +8,9 @@ type CaptureExpectation = {
   httpStatus: number
   status: "persisted" | "unchanged"
   unchanged: boolean
-  lightRagSyncAttempted: boolean
-  lightRagSyncMode?: "insert" | "overwrite-add"
+  lightRagSyncAttempted?: boolean
+  lightRagSyncMode?: "insert"
+  contradictionClassification?: "consistent" | "contradictory" | "uncertain"
 }
 
 export type CaptureScenarioStep = {
@@ -28,7 +29,7 @@ export type CaptureScenario = {
 export type LightRAGApiScenario = {
   id: string
   description: string
-  endpoint: "/documents/text" | "/documents/text/overwrite"
+  endpoint: "/documents/text"
   payload: LightRAGTextRequestPayload
   expectedStatus: "success"
   manualReview?: string
@@ -143,7 +144,7 @@ const captureScenarios: CaptureScenario[] = [
   },
   {
     id: "changed-recapture",
-    description: "Change body text for the same canonical URL and verify overwrite-add sync is selected.",
+    description: "Change body text for the same canonical URL and verify the old LightRAG document is removed before contradiction review, then a normal insert sync is used.",
     steps: [
       {
         name: "baseline insert",
@@ -164,7 +165,7 @@ const captureScenarios: CaptureScenario[] = [
           status: "persisted",
           unchanged: false,
           lightRagSyncAttempted: true,
-          lightRagSyncMode: "overwrite-add"
+          lightRagSyncMode: "insert"
         }
       }
     ]
@@ -190,9 +191,7 @@ const captureScenarios: CaptureScenario[] = [
         expect: {
           httpStatus: 201,
           status: "persisted",
-          unchanged: false,
-          lightRagSyncAttempted: true,
-          lightRagSyncMode: "insert"
+          unchanged: false
         }
       }
     ],
@@ -210,13 +209,13 @@ const lightRagApiScenarios: LightRAGApiScenario[] = [
     expectedStatus: "success"
   },
   {
-    id: "overwrite-company-facts",
-    description: "Send a direct MCP-shaped overwrite payload to the new overwrite endpoint.",
-    endpoint: "/documents/text/overwrite",
+    id: "insert-company-facts-update",
+    description: "Send a direct MCP-shaped payload to the standard text endpoint for an updated document insert.",
+    endpoint: "/documents/text",
     payload: buildLightRAGTextRequestPayload(companyFactsV2, companyFactsV2.url),
     expectedStatus: "success",
     manualReview:
-      "Inspect downstream LightRAG reasoning manually if you need to judge semantic overwrite quality."
+      "Inspect downstream LightRAG reasoning manually if you need to judge update quality after prior deletion."
   }
 ]
 

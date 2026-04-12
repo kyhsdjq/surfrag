@@ -2,7 +2,7 @@
  * Verification script for Phase 2.1/2.2: GLM embed → LanceDB add → vectorSearch.
  * Run: pnpm run verify:embedding
  *
- * Requires API_KEY (or ZHIPU_API_KEY) and VECTOR_DB_PATH in .env.
+ * Requires EMBED_API and VECTOR_DB_PATH in .env.
  */
 import "dotenv/config"
 import path from "node:path"

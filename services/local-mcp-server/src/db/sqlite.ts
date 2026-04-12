@@ -3,6 +3,10 @@ import path from "node:path"
 
 import Database from "better-sqlite3"
 
+import type {
+  ContradictionResult,
+  ContradictionReviewPacket
+} from "../contradiction/review.js"
 import type { CaptureRecord } from "../schema/capture.js"
 import { buildSearchMatch, buildSnippet, type SearchMatch } from "../search/match.js"
 
@@ -23,6 +27,17 @@ export type UpsertCaptureInput = {
   capture: CaptureRecord
   canonicalUrl: string
   contentHash: string
+}
+
+export type ContradictionReviewRow = {
+  captureId: string
+  url: string
+  rawDocument: string
+  candidateClaims: string[]
+  queryText: string
+  references: Array<{ reference_id: string; file_path: string }>
+  result: ContradictionResult
+  enteredDebate: boolean
 }
 
 type CaptureRow = {
@@ -111,6 +126,21 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH): SqliteBootstrapRe
     );
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contradiction_reviews (
+      url TEXT PRIMARY KEY,
+      capture_id TEXT NOT NULL,
+      raw_document TEXT NOT NULL,
+      candidate_claims_json TEXT NOT NULL DEFAULT '[]',
+      query_text TEXT NOT NULL DEFAULT '',
+      references_json TEXT NOT NULL DEFAULT '[]',
+      result_json TEXT NOT NULL,
+      entered_debate INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `)
+
   const hasPageIdColumn = db
     .prepare("SELECT 1 AS ok FROM pragma_table_info('captures') WHERE name = 'page_id' LIMIT 1;")
     .get() as { ok: number } | undefined
@@ -141,6 +171,9 @@ export const bootstrapSqlite = (dbPath = process.env.DB_PATH): SqliteBootstrapRe
   db.exec("CREATE INDEX IF NOT EXISTS idx_captures_canonical_url ON captures(canonical_url);")
   db.exec("CREATE INDEX IF NOT EXISTS idx_captures_url ON captures(url);")
   db.exec("CREATE INDEX IF NOT EXISTS idx_captures_captured_at ON captures(captured_at);")
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_contradiction_reviews_capture_id ON contradiction_reviews(capture_id);"
+  )
 
   return { db, dbPath: resolvedDbPath }
 }
@@ -277,6 +310,76 @@ export const upsertCapture = (db: Database.Database, input: UpsertCaptureInput) 
   })
 
   return operation()
+}
+
+export const upsertContradictionReview = (
+  db: Database.Database,
+  input: ContradictionReviewRow
+) => {
+  const nowIso = new Date().toISOString()
+
+  db.prepare(
+    `
+      INSERT INTO contradiction_reviews (
+        url,
+        capture_id,
+        raw_document,
+        candidate_claims_json,
+        query_text,
+        references_json,
+        result_json,
+        entered_debate,
+        created_at,
+        updated_at
+      ) VALUES (
+        @url,
+        @capture_id,
+        @raw_document,
+        @candidate_claims_json,
+        @query_text,
+        @references_json,
+        @result_json,
+        @entered_debate,
+        @created_at,
+        @updated_at
+      )
+      ON CONFLICT(url) DO UPDATE SET
+        capture_id = excluded.capture_id,
+        raw_document = excluded.raw_document,
+        candidate_claims_json = excluded.candidate_claims_json,
+        query_text = excluded.query_text,
+        references_json = excluded.references_json,
+        result_json = excluded.result_json,
+        entered_debate = excluded.entered_debate,
+        updated_at = excluded.updated_at;
+    `
+  ).run({
+    url: input.url,
+    capture_id: input.captureId,
+    raw_document: input.rawDocument,
+    candidate_claims_json: JSON.stringify(input.candidateClaims),
+    query_text: input.queryText,
+    references_json: JSON.stringify(input.references),
+    result_json: JSON.stringify(input.result),
+    entered_debate: input.enteredDebate ? 1 : 0,
+    created_at: nowIso,
+    updated_at: nowIso
+  })
+}
+
+export function toContradictionReviewRow(
+  review: ContradictionReviewPacket
+): ContradictionReviewRow {
+  return {
+    captureId: review.captureId,
+    url: review.reviewUrl,
+    rawDocument: review.rawDocument,
+    candidateClaims: review.candidateClaims,
+    queryText: review.query,
+    references: review.queryReferences,
+    result: review.result,
+    enteredDebate: review.enteredDebate
+  }
 }
 
 export const searchCaptures = (

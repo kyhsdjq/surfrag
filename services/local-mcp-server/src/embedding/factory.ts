@@ -3,8 +3,7 @@ import type { EmbeddingProvider } from "./types.js"
 
 export type EmbeddingEnv = {
   EMBED_PROVIDER?: string
-  API_KEY?: string
-  ZHIPU_API_KEY?: string
+  EMBED_API?: string
   EMBED_MODEL?: string
 }
 
@@ -17,9 +16,8 @@ export function getEmbeddingProvider(env: EmbeddingEnv = process.env): Embedding
 
   switch (provider) {
     case "glm": {
-      const apiKey = env.ZHIPU_API_KEY ?? env.API_KEY
       return new GLMEmbeddingProvider({
-        apiKey: apiKey ?? "",
+        apiKey: env.EMBED_API ?? "",
         model: env.EMBED_MODEL ?? "embedding-2"
       })
     }

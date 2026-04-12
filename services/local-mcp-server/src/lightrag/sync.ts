@@ -1,16 +1,11 @@
 import type { CaptureRecord } from "../schema/capture.js";
-import {
-  deleteLightRAGDocument,
-  findLightRAGDocumentByFileSource,
-  waitForLightRAGDocumentRemoval,
-  type LightRAGLogger
-} from "./documents.js";
+import { type LightRAGLogger } from "./documents.js";
 import {
   buildLightRAGHeaders,
   buildLightRAGTextRequestPayload
 } from "./payload.js";
 
-export type LightRAGSyncMode = "insert" | "overwrite-add";
+export type LightRAGSyncMode = "insert";
 
 export type SyncCaptureToLightRAGOptions = {
   mode?: LightRAGSyncMode;
@@ -30,14 +25,10 @@ function getLookupFileSources(
 async function insertDocumentText(
   capture: CaptureRecord,
   fileSource: string,
-  mode: LightRAGSyncMode,
   baseUrl: string,
   apiKey?: string | null
 ): Promise<Response> {
-  const endpoint =
-    mode === "overwrite-add" ? "/documents/text/overwrite" : "/documents/text";
-
-  return fetch(`${baseUrl}${endpoint}`, {
+  return fetch(`${baseUrl}/documents/text`, {
     method: "POST",
     headers: buildLightRAGHeaders(apiKey),
     body: JSON.stringify(buildLightRAGTextRequestPayload(capture, fileSource))
@@ -61,90 +52,9 @@ export async function syncCaptureToLightRAG(
   const lookupFileSources = getLookupFileSources(fileSource, options.lookupFileSources);
 
   try {
-    if (mode === "overwrite-add") {
-      for (const lookupSource of lookupFileSources) {
-        const existingDocument = await findLightRAGDocumentByFileSource(
-          lookupSource,
-          baseUrl,
-          apiKey
-        );
-
-        if (!existingDocument) {
-          continue;
-        }
-
-        log?.info?.(
-          {
-            captureId: capture.id,
-            fileSource: lookupSource,
-            docId: existingDocument.id,
-            status: existingDocument.status
-          },
-          "LightRAG document found for capture update"
-        );
-
-        // Temporarily keep the existing LightRAG document during same-URL updates
-        // because the current business plan no longer wants to delete first.
-        // const deleteResult = await deleteLightRAGDocument(
-        //   existingDocument.id,
-        //   baseUrl,
-        //   apiKey
-        // );
-        const deleteResult: { status?: string; message?: string } = {
-          status: "deletion_started"
-        };
-
-        if (deleteResult.status !== "deletion_started") {
-          log?.warn?.(
-            {
-              captureId: capture.id,
-              fileSource: lookupSource,
-              docId: existingDocument.id,
-              deleteStatus: deleteResult.status,
-              message: deleteResult.message
-            },
-            "LightRAG document deletion could not be started"
-          );
-          return;
-        }
-
-        const removed = await waitForLightRAGDocumentRemoval(
-          lookupSource,
-          baseUrl,
-          apiKey,
-          log
-        );
-
-        if (!removed) {
-          log?.error(
-            {
-              captureId: capture.id,
-              fileSource: lookupSource,
-              docId: existingDocument.id
-            },
-            "Timed out waiting for LightRAG document deletion"
-          );
-          return;
-        }
-
-        log?.info?.(
-          {
-            captureId: capture.id,
-            previousFileSource: lookupSource,
-            nextFileSource: fileSource,
-            docId: existingDocument.id
-          },
-          "LightRAG document deleted before reinsert"
-        );
-
-        break;
-      }
-    }
-
     const res = await insertDocumentText(
       capture,
       fileSource,
-      mode,
       baseUrl,
       apiKey
     );
@@ -167,7 +77,7 @@ export async function syncCaptureToLightRAG(
     }
 
     log?.info?.(
-      { captureId: capture.id, fileSource, mode },
+      { captureId: capture.id, fileSource, mode, lookupFileSources },
       "LightRAG capture sync queued"
     );
   } catch (err) {

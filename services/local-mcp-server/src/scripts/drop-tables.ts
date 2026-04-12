@@ -27,9 +27,10 @@ async function resetSqlite() {
 
   const db = new Database(sqlitePath)
   db.exec("DROP TABLE IF EXISTS captures")
+  db.exec("DROP TABLE IF EXISTS contradiction_reviews")
   db.close()
 
-  console.log(`SQLite: dropped captures at ${sqlitePath}`)
+  console.log(`SQLite: dropped captures and contradiction_reviews at ${sqlitePath}`)
 }
 
 async function resetLanceDb() {

@@ -21,7 +21,7 @@ import { queryLightRAG, type LightRAGQueryError } from "../lightrag/query.js"
 const SEARCH_LIMIT_DEFAULT = 10
 const SEARCH_LIMIT_MAX = 50
 const VECTOR_SEARCH_DISABLED_MSG =
-  "Error: Vector search is disabled. Set VECTOR_SEARCH_ENABLED=true, VECTOR_DB_ENABLED=true, API_KEY, and VECTOR_DB_PATH to enable semantic search."
+  "Error: Vector search is disabled. Set VECTOR_SEARCH_ENABLED=true, VECTOR_DB_ENABLED=true, EMBED_API, and VECTOR_DB_PATH to enable semantic search."
 
 const LIGHTRAG_QUERY_DISABLED_MSG =
   "Error: LightRAG query is disabled. Set LIGHTRAG_QUERY_ENABLED=true and ensure LightRAG server is running at LIGHTRAG_URL."
@@ -235,7 +235,7 @@ if (vectorSearchEnabled) {
     "vector_search",
     {
       description:
-        "Search across captured web pages by semantic similarity. Finds pages conceptually related to the query (e.g. 'machine learning tutorials' matches neural networks, deep learning). Use when the user asks by meaning rather than exact keywords. Returns matches with id, pageId, title, url, capturedAt, snippet, and distance. Call get_capture_by_id(id) for full content. Requires VECTOR_SEARCH_ENABLED=true, VECTOR_DB_ENABLED=true, API_KEY, and VECTOR_DB_PATH.",
+        "Search across captured web pages by semantic similarity. Finds pages conceptually related to the query (e.g. 'machine learning tutorials' matches neural networks, deep learning). Use when the user asks by meaning rather than exact keywords. Returns matches with id, pageId, title, url, capturedAt, snippet, and distance. Call get_capture_by_id(id) for full content. Requires VECTOR_SEARCH_ENABLED=true, VECTOR_DB_ENABLED=true, EMBED_API, and VECTOR_DB_PATH.",
       inputSchema: vectorSearchInputSchema.shape
     },
     async ({ query, limit, since }) => {

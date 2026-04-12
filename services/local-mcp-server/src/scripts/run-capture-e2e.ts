@@ -1,4 +1,6 @@
 import "dotenv/config"
+import { stdin as input, stdout as output } from "node:process"
+import { createInterface } from "node:readline/promises"
 
 import {
   getCaptureScenario,
@@ -8,7 +10,6 @@ import {
 
 const DEFAULT_SCENARIO_ID = "changed-recapture"
 const DEFAULT_PORT = "3030"
-const DEFAULT_STEP_DELAY_MS = 60_000
 
 type CaptureResponse = {
   ok?: boolean
@@ -16,6 +17,14 @@ type CaptureResponse = {
   unchanged?: boolean
   id?: string
   canonicalUrl?: string
+  contradictionReview?: {
+    classification?: "consistent" | "contradictory" | "uncertain"
+    blocked?: boolean
+    summaryReason?: string
+    disputedClaims?: string[]
+    reviewUrl?: string
+    enteredDebate?: boolean
+  }
   lightRagSync?: {
     attempted?: boolean
     reason?: string
@@ -67,30 +76,29 @@ function printHelp() {
   console.log(
     `Base URL resolution: MCP_BASE_URL > http://localhost:${process.env.PORT?.trim() || DEFAULT_PORT}`
   )
-  console.log(
-    `Step delay: CAPTURE_STEP_DELAY_MS > ${DEFAULT_STEP_DELAY_MS} (applied between requests when a scenario has multiple steps)`
-  )
+  console.log('When a scenario has multiple steps, type "c" and press Enter to continue.')
   console.log("Tip: run pnpm clean before a scenario for repeatable results.")
 }
 
-function getStepDelayMs(): number {
-  const raw = process.env.CAPTURE_STEP_DELAY_MS?.trim()
-  if (!raw) {
-    return DEFAULT_STEP_DELAY_MS
+async function promptToContinue(): Promise<void> {
+  const rl = createInterface({ input, output })
+  try {
+    while (true) {
+      const answer = (
+        await rl.question('Type "c" and press Enter to send the next capture: ')
+      )
+        .trim()
+        .toLowerCase()
+
+      if (answer === "c") {
+        return
+      }
+
+      console.log('Input not recognized. Enter "c" to continue.')
+    }
+  } finally {
+    rl.close()
   }
-
-  const parsed = Number(raw)
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(
-      `Invalid CAPTURE_STEP_DELAY_MS="${raw}". Expected a non-negative number of milliseconds.`
-    )
-  }
-
-  return parsed
-}
-
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function runStep(
@@ -129,25 +137,34 @@ async function runStep(
   )
   assert(typeof body.id === "string" && body.id.length > 0, "Expected capture id")
 
-  if (step.expect.lightRagSyncAttempted) {
+  if (typeof step.expect.contradictionClassification === "string") {
     assert(
-      body.lightRagSync?.attempted === true,
-      "Expected lightRagSync.attempted === true"
+      body.contradictionReview?.classification === step.expect.contradictionClassification,
+      `Expected contradictionReview.classification=${step.expect.contradictionClassification} but received ${body.contradictionReview?.classification ?? "<missing>"}`
     )
-    assert(
-      body.lightRagSync.mode === step.expect.lightRagSyncMode,
-      `Expected lightRagSync.mode=${step.expect.lightRagSyncMode} but received ${body.lightRagSync?.mode ?? "<missing>"}`
-    )
-    assert(
-      typeof body.lightRagSync.fileSource === "string" &&
-        body.lightRagSync.fileSource.length > 0,
-      "Expected lightRagSync.fileSource for persisted capture"
-    )
-  } else {
-    assert(
-      body.lightRagSync?.attempted === false,
-      "Expected lightRagSync.attempted === false"
-    )
+  }
+
+  if (typeof step.expect.lightRagSyncAttempted === "boolean") {
+    if (step.expect.lightRagSyncAttempted) {
+      assert(
+        body.lightRagSync?.attempted === true,
+        "Expected lightRagSync.attempted === true"
+      )
+      assert(
+        body.lightRagSync.mode === step.expect.lightRagSyncMode,
+        `Expected lightRagSync.mode=${step.expect.lightRagSyncMode} but received ${body.lightRagSync?.mode ?? "<missing>"}`
+      )
+      assert(
+        typeof body.lightRagSync.fileSource === "string" &&
+          body.lightRagSync.fileSource.length > 0,
+        "Expected lightRagSync.fileSource for persisted capture"
+      )
+    } else {
+      assert(
+        body.lightRagSync?.attempted === false,
+        "Expected lightRagSync.attempted === false"
+      )
+    }
   }
 }
 
@@ -165,22 +182,24 @@ async function main() {
   )
 
   const baseUrl = getBaseUrl()
-  const stepDelayMs = getStepDelayMs()
   console.log(`Running capture scenario "${scenario.id}" against ${baseUrl}`)
   console.log(scenario.description)
-  console.log("Expected automatic checks: HTTP status, persisted/unchanged status, and LightRAG sync path.")
-  console.log(`Inter-step wait: ${stepDelayMs}ms`)
+  console.log(
+    "Expected automatic checks: HTTP status, persisted/unchanged status, optional contradiction classification, and LightRAG sync path."
+  )
+  if (scenario.steps.length > 1) {
+    console.log('Inter-step mode: manual continue ("c" + Enter)')
+  }
 
   for (const [index, step] of scenario.steps.entries()) {
     await runStep(baseUrl, step, index)
 
     const hasNextStep = index < scenario.steps.length - 1
-    if (hasNextStep && stepDelayMs > 0) {
-      const waitSeconds = Math.ceil(stepDelayMs / 1000)
+    if (hasNextStep) {
       console.log(
-        `Waiting ${waitSeconds}s before the next capture so the previous page has time to finish processing.`
+        "The previous capture has finished. Confirm manually before sending the next one."
       )
-      await sleep(stepDelayMs)
+      await promptToContinue()
     }
   }
 

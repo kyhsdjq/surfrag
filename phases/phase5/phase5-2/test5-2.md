@@ -35,6 +35,7 @@ Available test commands:
 - `pnpm test:phase5:capture [scenario-id]`
   - sends fixture payloads to `POST /captures`
   - validates deterministic MCP-side behavior
+  - for multi-step scenarios, pauses after each non-final request until the developer types `c` and presses Enter
 - `pnpm test:phase5:lightrag [scenario-id]`
   - sends MCP-shaped payloads directly to LightRAG
   - validates deterministic LightRAG API behavior
@@ -49,7 +50,7 @@ Current capture scenarios:
 Current direct LightRAG scenarios:
 
 - `insert-article`
-- `overwrite-company-facts`
+- `insert-company-facts-update`
 
 ---
 
@@ -80,6 +81,8 @@ This script automatically checks:
 - `lightRagSync.attempted`
 - `lightRagSync.mode` when sync should happen
 - `lightRagSync.fileSource` when sync should happen
+
+For multi-step capture scenarios, the script does not automatically wait on a timer anymore. After each non-final request finishes, it prompts the developer to type `c` and press Enter before the next request is sent.
 
 ### `pnpm test:phase5:lightrag`
 
@@ -217,7 +220,8 @@ pnpm test:phase5:capture unchanged-recapture
 
 1. Reset all state with `pnpm clean`.
 2. Send Virtual Page A v1 to `POST /captures`.
-3. Send Virtual Page A v1 again without changing URL or body text.
+3. After the first request completes, type `c` and press Enter to continue.
+4. Send Virtual Page A v1 again without changing URL or body text.
 
 ### Requests Sent
 
@@ -251,7 +255,7 @@ For the second request:
 
 ### Purpose
 
-Verify that a second capture with the same canonical URL but changed body content takes the changed-update path and selects LightRAG `overwrite-add`.
+Verify that a second capture with the same canonical URL but changed body content takes the changed-update path, removes the prior LightRAG document first, and then uses the normal LightRAG `insert` path.
 
 ### Command
 
@@ -264,7 +268,8 @@ pnpm test:phase5:capture changed-recapture
 
 1. Reset all state with `pnpm clean`.
 2. Send Virtual Page A v1 to `POST /captures`.
-3. Send Virtual Page A v2 to `POST /captures`.
+3. After the first request completes, type `c` and press Enter to continue.
+4. Send Virtual Page A v2 to `POST /captures`.
 
 ### Requests Sent
 
@@ -299,7 +304,7 @@ For the second request:
 - response `status` is `persisted`
 - response `unchanged` is `false`
 - `lightRagSync.attempted === true`
-- `lightRagSync.mode === "overwrite-add"`
+- `lightRagSync.mode === "insert"`
 
 ---
 
@@ -320,7 +325,8 @@ pnpm test:phase5:capture contradiction-company-facts
 
 1. Reset all state with `pnpm clean`.
 2. Send Virtual Page B v1 to `POST /captures`.
-3. Send Virtual Page B v2 to `POST /captures`.
+3. After the first request completes, type `c` and press Enter to continue.
+4. Send Virtual Page B v2 to `POST /captures`.
 
 ### Requests Sent
 
@@ -355,7 +361,7 @@ For the second request:
 - response `status` is `persisted`
 - response `unchanged` is `false`
 - `lightRagSync.attempted === true`
-- `lightRagSync.mode === "overwrite-add"`
+- `lightRagSync.mode === "insert"`
 
 ### Manual Review
 
@@ -365,7 +371,7 @@ Developers should manually inspect:
 
 - whether downstream LightRAG output reflects the changed facts
 - whether future contradiction-detection behavior is reasonable
-- whether overwrite semantics are acceptable for this case
+- whether delete-then-insert semantics are acceptable for this case
 
 ---
 
@@ -406,23 +412,23 @@ The direct LightRAG request body is:
 
 ---
 
-## Direct LightRAG Scenario 2: `overwrite-company-facts`
+## Direct LightRAG Scenario 2: `insert-company-facts-update`
 
 ### Purpose
 
-Smoke-test the new overwrite-style LightRAG endpoint using an MCP-shaped request.
+Smoke-test the standard LightRAG text insert endpoint using an MCP-shaped updated document request.
 
 ### Command
 
 ```bash
 pnpm clean
-pnpm test:phase5:lightrag overwrite-company-facts
+pnpm test:phase5:lightrag insert-company-facts-update
 ```
 
 ### Steps
 
 1. Reset all state with `pnpm clean`.
-2. Send a direct request to `POST /documents/text/overwrite`.
+2. Send a direct request to `POST /documents/text`.
 
 ### Request Sent
 
@@ -445,7 +451,7 @@ The direct LightRAG request body is:
 
 Developers may optionally inspect:
 
-- whether overwrite ingestion behaves sensibly downstream
+- whether updated insert ingestion behaves sensibly downstream
 - whether entity/relationship merging still looks correct
 - whether the semantic result matches expectations
 
@@ -467,7 +473,7 @@ pnpm test:phase5:capture contradiction-company-facts
 pnpm clean
 pnpm test:phase5:lightrag insert-article
 pnpm clean
-pnpm test:phase5:lightrag overwrite-company-facts
+pnpm test:phase5:lightrag insert-company-facts-update
 ```
 
 ---
@@ -512,5 +518,7 @@ Then run:
 ```bash
 pnpm test:phase5:capture <your-scenario-id>
 ```
+
+If your custom scenario has multiple steps, the script will pause between non-final requests and wait for `c` + Enter.
 
 This is the better option when you want to reuse the existing automatic assertions.
