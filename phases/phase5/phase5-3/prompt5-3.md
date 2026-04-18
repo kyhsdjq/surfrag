@@ -1,5 +1,7 @@
 # Phase 5.3 Prompt
 
+> Note: Phase 5.4 later extends this same contradiction-query prompt with policy-ready contradiction-set signals and `preliminary_action`. Use this file as the baseline Phase 5.3 prompt, and refer to `phases/phase5/phase5-4/prompt5-4.md` for the later prompt extension.
+
 ## Purpose
 
 This file records the contradiction-detection prompt currently used by the Phase 5.3 implementation in `services/local-mcp-server/src/contradiction/review.ts`.

@@ -1,5 +1,7 @@
 # Phase 5.3: Expected LightRAG Response Schema
 
+> Note: Phase 5.4 later adds policy-ready contradiction-set signals and `preliminary_action` on top of this base schema. Use this file for the original Phase 5.3 classification fields, and use `phases/phase5/phase5-4/schema5-4.md` for the later-added Phase 5.4 extension fields.
+
 ## Purpose
 
 This file defines the **expected JSON response shape** for the single LightRAG contradiction query used by Phase 5.3.
@@ -181,7 +183,7 @@ Phase 5.3 should persist one lightweight review-table row per document candidate
   - required
   - the current contradiction result in the same shape defined earlier in this file
   - initially this is the Phase 5.3 LightRAG result
-  - after Phase 5.4, this should still keep the same shape, only updated to the final post-debate result
+  - after Phase 5.4, this should still keep the same shape, only updated claim by claim during debate and then updated again to the final post-debate article result
 
 - `entered_debate`
   - required

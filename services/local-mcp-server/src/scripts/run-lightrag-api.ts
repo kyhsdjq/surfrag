@@ -7,7 +7,7 @@ import {
 } from "./fixtures/phase5.js"
 
 const DEFAULT_BASE_URL = "http://localhost:9621"
-const DEFAULT_SCENARIO_ID = "insert-company-facts-update"
+const DEFAULT_SCENARIO_ID = "5.1.5"
 
 type LightRAGInsertResponse = {
   status?: string

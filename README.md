@@ -100,6 +100,7 @@ Create `services/local-mcp-server/.env` from `.env.example` and configure:
 | `LLM_API_KEY` | — | API key for MCP-side LLM calls such as claim extraction |
 | `LLM_API_PROVIDER` | `glm` | LLM provider for MCP-side structured generation. Currently implemented: `glm` |
 | `LLM_MODEL` | `glm-4-flash` | LLM model used for MCP-side claim extraction |
+| `MAX_DEBATE_ROUNDS` | `3` | Phase 5.4 debate max rounds. Reserved for the upcoming claim-level debate loop. |
 | `VECTOR_DB_PATH` | `./data/lancedb` | Directory for LanceDB vector storage |
 | `VECTOR_DB_ENABLED` | `false` | Store captures in LanceDB (vector search). `true` to enable as second choice. |
 | `SEARCH_CAPTURES_ENABLED` | `false` | Show `search_captures` MCP tool (keyword search). Set `true` to enable. |

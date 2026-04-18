@@ -5,7 +5,7 @@ import {
   buildLightRAGTextRequestPayload
 } from "./payload.js";
 
-export type LightRAGSyncMode = "insert";
+export type LightRAGSyncMode = "insert" | "overwrite-add";
 
 export type SyncCaptureToLightRAGOptions = {
   mode?: LightRAGSyncMode;
@@ -35,8 +35,21 @@ async function insertDocumentText(
   });
 }
 
+async function overwriteDocumentText(
+  capture: CaptureRecord,
+  fileSource: string,
+  baseUrl: string,
+  apiKey?: string | null
+): Promise<Response> {
+  return fetch(`${baseUrl}/documents/text/overwrite`, {
+    method: "POST",
+    headers: buildLightRAGHeaders(apiKey),
+    body: JSON.stringify(buildLightRAGTextRequestPayload(capture, fileSource))
+  });
+}
+
 /**
- * Sync a capture to LightRAG's insert API (Phase 3.3).
+ * Sync a capture to LightRAG's insert or overwrite-add API.
  * Fire-and-forget: logs errors but does not throw.
  */
 export async function syncCaptureToLightRAG(
@@ -52,12 +65,10 @@ export async function syncCaptureToLightRAG(
   const lookupFileSources = getLookupFileSources(fileSource, options.lookupFileSources);
 
   try {
-    const res = await insertDocumentText(
-      capture,
-      fileSource,
-      baseUrl,
-      apiKey
-    );
+    const res =
+      mode === "overwrite-add"
+        ? await overwriteDocumentText(capture, fileSource, baseUrl, apiKey)
+        : await insertDocumentText(capture, fileSource, baseUrl, apiKey);
 
     if (!res.ok) {
       const errBody = await res.text();

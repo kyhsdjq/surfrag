@@ -1,5 +1,7 @@
 # Phase 5.3: Add Contradiction Detection
 
+> Note: Phase 5.4 later extends the same contradiction-query flow to request policy-ready contradiction-set signals for preliminary action. For those later-added signal fields and prompt extensions, refer to `phases/phase5/phase5-4/schema5-4.md` and `phases/phase5/phase5-4/prompt5-4.md`. This file remains the reference for the original Phase 5.3 contradiction-detection design.
+
 ## Objective
 Add a contradiction-detection gate in the MCP server so a newly accepted capture is not blindly inserted into LightRAG. Before LightRAG sync runs, the system should first extract a small set of candidate claims from the new document, then make a **single** structured LightRAG `/query` call that asks whether those claims contradict the current graph and requires a JSON response with both a **document-level classification** and **per-claim classifications** plus reference documents. The MCP server should then parse that JSON and only allow LightRAG insertion when the returned document-level result is safe enough to pass. If the document-level result is `contradictory` or `uncertain`, the contradictory claims should become the input cases for Phase 5.4 debate.
 

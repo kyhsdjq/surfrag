@@ -8,7 +8,7 @@ import {
   type CaptureScenarioStep
 } from "./fixtures/phase5.js"
 
-const DEFAULT_SCENARIO_ID = "changed-recapture"
+const DEFAULT_SCENARIO_ID = "5.1.3"
 const DEFAULT_PORT = "3030"
 
 type CaptureResponse = {
@@ -19,7 +19,25 @@ type CaptureResponse = {
   canonicalUrl?: string
   contradictionReview?: {
     classification?: "consistent" | "contradictory" | "uncertain"
+    policySignals?: {
+      contradictoryDocumentCount?: number
+      contradictorySourceCount?: number
+      hasMultiViewExisting?: boolean
+      hasDecisiveNewEvidence?: boolean
+      hasInsufficientEvidence?: boolean
+      sourceLineageNotes?: string
+      oldSideSupportStrength?: "weak" | "medium" | "strong"
+    }
+    signalPatterns?: string[]
+    preliminaryAction?: "allow-add" | "allow-add-prefer-new" | "hold" | "reject"
+    preliminaryActionReason?: string
+    finalAction?: "allow-add" | "allow-add-prefer-new" | "reject"
+    finalActionReason?: string
+    lowConfidence?: boolean
     blocked?: boolean
+    debateTodo?: boolean
+    shouldEnterDebate?: boolean
+    debateStatus?: "not-needed" | "todo" | "entered" | "completed"
     summaryReason?: string
     disputedClaims?: string[]
     reviewUrl?: string
@@ -144,6 +162,49 @@ async function runStep(
     )
   }
 
+  if (typeof step.expect.contradictionPreliminaryAction === "string") {
+    assert(
+      body.contradictionReview?.preliminaryAction ===
+        step.expect.contradictionPreliminaryAction,
+      `Expected contradictionReview.preliminaryAction=${step.expect.contradictionPreliminaryAction} but received ${body.contradictionReview?.preliminaryAction ?? "<missing>"}`
+    )
+  }
+
+  if (typeof step.expect.contradictionBlocked === "boolean") {
+    assert(
+      body.contradictionReview?.blocked === step.expect.contradictionBlocked,
+      `Expected contradictionReview.blocked=${String(step.expect.contradictionBlocked)} but received ${String(body.contradictionReview?.blocked)}`
+    )
+  }
+
+  if (typeof step.expect.contradictionDebateTodo === "boolean") {
+    assert(
+      body.contradictionReview?.debateTodo === step.expect.contradictionDebateTodo,
+      `Expected contradictionReview.debateTodo=${String(step.expect.contradictionDebateTodo)} but received ${String(body.contradictionReview?.debateTodo)}`
+    )
+  }
+
+  if (typeof step.expect.contradictionFinalAction === "string") {
+    assert(
+      body.contradictionReview?.finalAction === step.expect.contradictionFinalAction,
+      `Expected contradictionReview.finalAction=${step.expect.contradictionFinalAction} but received ${body.contradictionReview?.finalAction ?? "<missing>"}`
+    )
+  }
+
+  if (typeof step.expect.contradictionEnteredDebate === "boolean") {
+    assert(
+      body.contradictionReview?.enteredDebate === step.expect.contradictionEnteredDebate,
+      `Expected contradictionReview.enteredDebate=${String(step.expect.contradictionEnteredDebate)} but received ${String(body.contradictionReview?.enteredDebate)}`
+    )
+  }
+
+  if (typeof step.expect.contradictionLowConfidence === "boolean") {
+    assert(
+      body.contradictionReview?.lowConfidence === step.expect.contradictionLowConfidence,
+      `Expected contradictionReview.lowConfidence=${String(step.expect.contradictionLowConfidence)} but received ${String(body.contradictionReview?.lowConfidence)}`
+    )
+  }
+
   if (typeof step.expect.lightRagSyncAttempted === "boolean") {
     if (step.expect.lightRagSyncAttempted) {
       assert(
@@ -185,7 +246,7 @@ async function main() {
   console.log(`Running capture scenario "${scenario.id}" against ${baseUrl}`)
   console.log(scenario.description)
   console.log(
-    "Expected automatic checks: HTTP status, persisted/unchanged status, optional contradiction classification, and LightRAG sync path."
+    "Expected automatic checks: HTTP status, persisted/unchanged status, contradiction review outputs, and LightRAG sync path."
   )
   if (scenario.steps.length > 1) {
     console.log('Inter-step mode: manual continue ("c" + Enter)')

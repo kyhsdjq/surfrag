@@ -5,11 +5,12 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"Use pnpm test:phase5:policy or the phase5 replay scripts.\"",
     "verify:embedding": "tsx src/scripts/verify-embedding.ts",
     "clean": "tsx src/scripts/drop-tables.ts",
     "test:phase5:capture": "tsx src/scripts/run-capture-e2e.ts",
     "test:phase5:lightrag": "tsx src/scripts/run-lightrag-api.ts",
+    "test:phase5:policy": "tsx --test src/contradiction/review.test.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",

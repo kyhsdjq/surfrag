@@ -13,9 +13,17 @@ import {
   upsertContradictionReview
 } from "./db/sqlite.js";
 import {
+  deriveSignalPatterns,
   evaluateCaptureForContradictions,
-  type ContradictionClassification
+  type ContradictionClassification,
+  type FinalAction,
+  type PolicySignals,
+  type PreliminaryAction
 } from "./contradiction/review.js";
+import {
+  getMaxDebateRounds,
+  runContradictionDebate
+} from "./contradiction/debate.js";
 import { computeContentHash } from "./ingest/hash.js";
 import { canonicalizeCaptureUrl } from "./ingest/url.js";
 import { toCaptureRecord, type CaptureIngestInput } from "./schema/capture.js";
@@ -45,6 +53,7 @@ const lightragInsertEnabled =
     : parseBoolEnv(process.env.LIGHTRAG_INSERT_ENABLED);
 const lightragUrl = process.env.LIGHTRAG_URL?.trim() || DEFAULT_LIGHTRAG_URL;
 const lightragApiKey = process.env.LIGHTRAG_API_KEY?.trim() || null;
+const maxDebateRounds = getMaxDebateRounds();
 
 type LightRAGSyncSummary = {
   attempted: boolean;
@@ -56,7 +65,17 @@ type LightRAGSyncSummary = {
 
 type ContradictionReviewSummary = {
   classification: ContradictionClassification;
+  policySignals: PolicySignals;
+  signalPatterns: string[];
+  preliminaryAction: PreliminaryAction;
+  preliminaryActionReason: string;
+  finalAction?: FinalAction;
+  finalActionReason?: string;
+  lowConfidence: boolean;
   blocked: boolean;
+  debateTodo: boolean;
+  shouldEnterDebate: boolean;
+  debateStatus: "not-needed" | "todo" | "entered" | "completed";
   summaryReason: string;
   disputedClaims: string[];
   reviewUrl: string;
@@ -106,7 +125,7 @@ if (canBootstrapVectorIndexing()) {
 }
 
 if (lightragInsertEnabled && lightragUrl) {
-  app.log.info({ lightragUrl }, "LightRAG sync enabled");
+  app.log.info({ lightragUrl, maxDebateRounds }, "LightRAG sync enabled");
 }
 
 // Simple health-check endpoint to verify the service is alive.
@@ -118,7 +137,7 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
     const canonicalUrl = canonicalizeCaptureUrl(captureRecord.url);
     const contentHash = computeContentHash(captureRecord.bodyText);
     const previousCapture = getCaptureIdentityState(db, canonicalUrl);
-    const lightragSyncMode: LightRAGSyncMode = "insert";
+    let lightragSyncMode: LightRAGSyncMode = "insert";
     const lightragFileSource = canonicalUrl;
     const lightragLookupFileSources = [
       canonicalUrl,
@@ -240,7 +259,7 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
 
     // Phase 5.3: contradiction gate before LightRAG sync.
     if (lightragInsertEnabled && lightragUrl) {
-      const contradictionReview = await evaluateCaptureForContradictions({
+      let contradictionReview = await evaluateCaptureForContradictions({
         capture: captureRecord,
         reviewUrl: canonicalUrl,
         fileSource: lightragFileSource,
@@ -250,13 +269,53 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
 
       upsertContradictionReview(db, toContradictionReviewRow(contradictionReview));
 
+      if (contradictionReview.result.preliminary_action === "hold") {
+        request.log.info(
+          {
+            captureId: insertResult.id,
+            canonicalUrl,
+            maxDebateRounds,
+            disputedClaims: contradictionReview.disputedClaims.map((claim) => claim.claim_text)
+          },
+          "Entering Phase 5.4 claim-level debate"
+        );
+
+        contradictionReview = await runContradictionDebate({
+          review: contradictionReview,
+          baseUrl: lightragUrl,
+          apiKey: lightragApiKey,
+          maxRounds: maxDebateRounds
+        });
+
+        upsertContradictionReview(db, toContradictionReviewRow(contradictionReview));
+      }
+
       contradictionReviewSummary = {
         classification: contradictionReview.result.classification,
+        policySignals: contradictionReview.result.policy_signals,
+        signalPatterns: deriveSignalPatterns(contradictionReview.result.policy_signals),
+        preliminaryAction: contradictionReview.result.preliminary_action,
+        preliminaryActionReason: contradictionReview.result.preliminary_action_reason,
+        lowConfidence: contradictionReview.result.low_confidence ?? false,
         blocked: contradictionReview.blocked,
+        debateTodo: contradictionReview.debateTodo,
+        shouldEnterDebate: contradictionReview.debateTodo || contradictionReview.enteredDebate,
+        debateStatus:
+          contradictionReview.enteredDebate
+            ? "completed"
+            : contradictionReview.result.preliminary_action === "hold"
+              ? "todo"
+              : "not-needed",
         summaryReason: contradictionReview.result.summary_reason,
         disputedClaims: contradictionReview.disputedClaims.map((claim) => claim.claim_text),
         reviewUrl: contradictionReview.reviewUrl,
-        enteredDebate: contradictionReview.enteredDebate
+        enteredDebate: contradictionReview.enteredDebate,
+        ...(contradictionReview.result.final_action
+          ? { finalAction: contradictionReview.result.final_action }
+          : {}),
+        ...(contradictionReview.result.final_action_reason
+          ? { finalActionReason: contradictionReview.result.final_action_reason }
+          : {})
       };
 
       if (contradictionReview.blocked) {
@@ -273,18 +332,37 @@ app.post<{ Body: CaptureIngestInput }>("/captures", async (request, reply) => {
             captureId: insertResult.id,
             canonicalUrl,
             classification: contradictionReview.result.classification,
-            disputedClaims: contradictionReviewSummary.disputedClaims
+            preliminaryAction: contradictionReview.result.preliminary_action,
+            finalAction: contradictionReview.result.final_action,
+            lowConfidence: contradictionReview.result.low_confidence,
+            debateTodo: contradictionReview.debateTodo,
+            disputedClaims: contradictionReview.disputedClaims.map((claim) => claim.claim_text)
           },
           "Capture blocked by contradiction review before LightRAG sync"
         );
       } else {
+        const effectiveAction =
+          contradictionReview.result.final_action ??
+          contradictionReview.result.preliminary_action
+        lightragSyncMode =
+          effectiveAction === "allow-add-prefer-new" ? "overwrite-add" : "insert";
+        lightragSyncSummary = {
+          attempted: true,
+          mode: lightragSyncMode,
+          fileSource: lightragFileSource,
+          lookupFileSources: lightragLookupFileSources
+        };
+
         request.log.info(
           {
             captureId: insertResult.id,
             canonicalUrl,
             mode: lightragSyncMode,
             fileSource: lightragFileSource,
-            classification: contradictionReview.result.classification
+            classification: contradictionReview.result.classification,
+            preliminaryAction: contradictionReview.result.preliminary_action,
+            finalAction: contradictionReview.result.final_action,
+            lowConfidence: contradictionReview.result.low_confidence
           },
           "Queueing LightRAG capture sync"
         );
