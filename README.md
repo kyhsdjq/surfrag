@@ -212,6 +212,8 @@ To use the SurfRAG MCP tools in Cursor or other MCP clients, add the server to y
 
 **Tools:** `lightrag_query` (graph RAG, default), `search_captures` (keyword, optional), `vector_search` (semantic, optional), `get_capture_by_id` (only when search_captures or vector_search enabled)
 
+#### stdio MCP
+
 Cursor uses `~/.cursor/mcp.json` (global) or the MCP section in Cursor Settings.
 
 Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo, e.g. `D:/surfrag`):
@@ -233,3 +235,135 @@ Example JSON (replace `YOUR_WORKSPACE_PATH` with the absolute path to this repo,
 ```
 
 When Cursor runs MCP, `cwd` may differ. Pass `DB_PATH` as absolute path. `LIGHTRAG_URL` is required for LightRAG (default). Optional: `VECTOR_SEARCH_ENABLED`, `VECTOR_DB_PATH`, `VECTOR_DB_ENABLED`, and `EMBED_API` for vector search. Start LightRAG server before the MCP server.
+
+#### HTTP MCP
+
+The local MCP server also exposes MCP over HTTP on the same service process:
+
+`http://localhost:3030/mcp`
+
+Start the local server with `pnpm dev` or `pnpm start`, then point your HTTP-capable MCP client to that endpoint.
+
+Notes:
+
+- The server uses MCP Streamable HTTP with JSON responses enabled.
+- `POST /mcp` handles MCP JSON-RPC requests.
+- `DELETE /mcp` with the `Mcp-Session-Id` header closes a session.
+- `GET /mcp` is not used for this setup and returns `405 Method Not Allowed`.
+- This implementation currently expects clients to send `Accept: application/json, text/event-stream`.
+- `Content-Type: application/json` is used for POST request bodies.
+
+The examples below show the full minimum flow for this server:
+
+1. initialize
+2. `notifications/initialized`
+3. `tools/list` or `tools/call`
+4. `DELETE /mcp` when finished
+
+##### Example: Initialize a session
+
+```bash
+curl -i \
+  -X POST "http://localhost:3030/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "example-http-client",
+        "version": "1.0.0"
+      }
+    }
+  }'
+```
+
+Save the returned `Mcp-Session-Id` response header and reuse it in later requests.
+
+##### Example: Send `notifications/initialized`
+
+```bash
+curl \
+  -X POST "http://localhost:3030/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized"
+  }'
+```
+
+##### Example: List tools
+
+```bash
+curl \
+  -X POST "http://localhost:3030/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+##### Example: Call `lightrag_query`
+
+```bash
+curl \
+  -X POST "http://localhost:3030/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "lightrag_query",
+      "arguments": {
+        "query": "What does SurfRAG do?",
+        "mode": "mix",
+        "limit": 5
+      }
+    }
+  }'
+```
+
+##### Example: Call `search_captures`
+
+```bash
+curl \
+  -X POST "http://localhost:3030/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 5,
+    "method": "tools/call",
+    "params": {
+      "name": "search_captures",
+      "arguments": {
+        "keyword": "SurfRAG",
+        "limit": 5
+      }
+    }
+  }'
+```
+
+##### Example: Close the session
+
+```bash
+curl \
+  -X DELETE "http://localhost:3030/mcp" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: YOUR_SESSION_ID"
+```

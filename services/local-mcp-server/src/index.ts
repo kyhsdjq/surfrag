@@ -36,6 +36,7 @@ import { getEmbeddingProvider } from "./embedding/index.js";
 import { getChunkingStrategy } from "./chunking/index.js";
 import { canBootstrapVectorIndexing, isVectorDbEnabled } from "./vector/bootstrap.js";
 import { bootstrapLanceDB, type LanceDBClient } from "./vector/lancedb.js";
+import { registerMcpHttpRoutes } from "./mcp/http.js";
 
 const DEFAULT_VECTOR_DB_PATH = "./data/lancedb";
 const DEFAULT_LIGHTRAG_URL = "http://localhost:9621";
@@ -86,6 +87,8 @@ const app = Fastify({ logger: true });
 const { db, dbPath } = bootstrapSqlite();
 
 app.log.info({ dbPath }, "SQLite bootstrap complete");
+
+await registerMcpHttpRoutes(app);
 
 let lanceClient: LanceDBClient | null = null;
 
