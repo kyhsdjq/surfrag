@@ -206,6 +206,23 @@ pnpm start
 Set-Location services/local-mcp-server; pnpm dev
 ```
 
+### SQLite Tables
+
+The local MCP server stores structured data in SQLite at `services/local-mcp-server/data/surfrag.db` by default.
+
+- `captures`: local storage for captured pages, including page content, metadata, and detailed capture information.
+- `contradiction_reviews`: logs produced during contradiction detection and information consistency processing.
+
+You can inspect the latest 10 rows of each table from the repo root with `pnpm`:
+
+```powershell
+pnpm --dir .\services\local-mcp-server exec node -e "const Database=require('better-sqlite3'); const db=new Database('./data/surfrag.db'); console.log(db.prepare('SELECT id, title, url, captured_at FROM captures ORDER BY captured_at DESC LIMIT 10').all())"
+```
+
+```powershell
+pnpm --dir .\services\local-mcp-server exec node -e "const Database=require('better-sqlite3'); const db=new Database('./data/surfrag.db'); console.log(db.prepare('SELECT url, capture_id, query_text, entered_debate, updated_at FROM contradiction_reviews ORDER BY updated_at DESC LIMIT 10').all())"
+```
+
 ### Add MCP to Your Agent
 
 To use the SurfRAG MCP tools in Cursor or other MCP clients, add the server to your MCP configuration.
